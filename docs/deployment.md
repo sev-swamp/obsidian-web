@@ -70,7 +70,10 @@ server {
 ## Security checklist for public instances
 
 1. `auth.enabled: true`, strong `jwtSecret` (e.g. `openssl rand -hex 32`).
-2. Use `passwordHash` (bcrypt), not plaintext `password`:
-   `htpasswd -bnBC 10 "" 'secret' | tr -d ':\n'`.
-3. Terminate TLS at the reverse proxy.
-4. Mount the vault read-write only if editing from the web is desired.
+2. Use `passwordHash` (bcrypt), not plaintext `password`. Generate with
+   `obsidianweb-cli hash-password` (reads the password from stdin).
+3. Give each person their own account under `auth.users` with the
+   least-privileged role (`viewer` < `editor` < `admin`); restart the
+   server after editing the file.
+4. Terminate TLS at the reverse proxy.
+5. Mount the vault read-write only if editing from the web is desired.

@@ -39,8 +39,18 @@ auth:
     username: "admin"
     # Either a plaintext password (development only)…
     password: ""
-    # …or a bcrypt hash (production): htpasswd -bnBC 10 "" 'secret' | tr -d ':\n'
+    # …or a bcrypt hash (production): ./bin/obsidianweb-cli hash-password
     passwordHash: ""
+  # Additional accounts. Roles: viewer (read-only) | editor (read/write)
+  # | admin (also settings). Role defaults to viewer when omitted.
+  # Generate hashes with: ./bin/obsidianweb-cli hash-password
+  users: []
+  #  - username: "editor"
+  #    passwordHash: "$2a$10$…"
+  #    role: "editor"
+  #  - username: "guest"
+  #    passwordHash: "$2a$10$…"
+  #    role: "viewer"
 
 web:
   # Serve the frontend from a directory instead of the embedded build

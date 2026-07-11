@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/term"
 
 	"github.com/obsidianweb/obsidianweb/packages/core"
 	"github.com/obsidianweb/obsidianweb/packages/filesystem"
@@ -29,6 +33,10 @@ Commands:
   index         index the vault and print statistics
   check-links   list broken wiki-links
   export -out <dir>   export all notes as HTML
+
+Standalone (no -vault needed):
+  hash-password   read a password from stdin, print its bcrypt hash
+                  (for auth.users[].passwordHash in config.yaml)
 `)
 	os.Exit(2)
 }
@@ -38,6 +46,10 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
+	if flag.NArg() >= 1 && flag.Arg(0) == "hash-password" {
+		runHashPassword()
+		return
+	}
 	if *vaultPath == "" || flag.NArg() < 1 {
 		usage()
 	}
@@ -119,6 +131,31 @@ func runCheckLinks(linkIndex *links.Index) {
 	}
 	fmt.Printf("\n%d broken link(s) in %d note(s)\n", total, len(sources))
 	os.Exit(1)
+}
+
+// runHashPassword reads a password from stdin (piped or typed) and
+// prints a bcrypt hash suitable for passwordHash fields in config.yaml.
+func runHashPassword() {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprint(os.Stderr, "Password: ")
+	}
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		fmt.Fprintln(os.Stderr, "error: could not read password from stdin")
+		os.Exit(1)
+	}
+	password := strings.TrimRight(line, "\r\n")
+	if password == "" {
+		fmt.Fprintln(os.Stderr, "error: empty password")
+		os.Exit(1)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 10)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+	fmt.Println(string(hash))
 }
 
 func runExport(notes *core.NoteService, outDir string) {

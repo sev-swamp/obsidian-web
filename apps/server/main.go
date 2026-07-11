@@ -69,14 +69,12 @@ func run(configPath, vaultOverride string) error {
 	if cfg.Auth.Enabled && cfg.Auth.JWTSecret == "" {
 		return errors.New("auth.enabled requires auth.jwtSecret (or OBSIDIANWEB_JWT_SECRET)")
 	}
+	users, err := buildUsers(cfg)
+	if err != nil {
+		return err
+	}
 	authService := auth.NewService(cfg.Auth.Enabled, cfg.Auth.JWTSecret,
-		time.Duration(cfg.Auth.TokenTTLHours)*time.Hour,
-		[]auth.User{{
-			Username:     cfg.Auth.Admin.Username,
-			Password:     cfg.Auth.Admin.Password,
-			PasswordHash: cfg.Auth.Admin.PasswordHash,
-			Role:         auth.RoleAdmin,
-		}})
+		time.Duration(cfg.Auth.TokenTTLHours)*time.Hour, users)
 
 	hub := websocket.NewHub(bus, log)
 
@@ -126,6 +124,40 @@ func run(configPath, vaultOverride string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(ctx)
+}
+
+// buildUsers assembles all accounts from the config (admin + auth.users)
+// and fails fast on duplicates, unknown roles or missing credentials.
+func buildUsers(cfg *settings.Config) ([]auth.User, error) {
+	users := []auth.User{{
+		Username:     cfg.Auth.Admin.Username,
+		Password:     cfg.Auth.Admin.Password,
+		PasswordHash: cfg.Auth.Admin.PasswordHash,
+		Role:         auth.RoleAdmin,
+	}}
+	seen := map[string]bool{cfg.Auth.Admin.Username: true}
+	for i, u := range cfg.Auth.Users {
+		if u.Username == "" {
+			return nil, fmt.Errorf("auth.users[%d]: username is required", i)
+		}
+		if seen[u.Username] {
+			return nil, fmt.Errorf("auth.users[%d]: duplicate username %q", i, u.Username)
+		}
+		seen[u.Username] = true
+		if cfg.Auth.Enabled && u.Password == "" && u.PasswordHash == "" {
+			return nil, fmt.Errorf("auth.users[%d] (%s): password or passwordHash is required", i, u.Username)
+		}
+		if u.Role != "" && !auth.ValidRole(u.Role) {
+			return nil, fmt.Errorf("auth.users[%d] (%s): unknown role %q (viewer|editor|admin)", i, u.Username, u.Role)
+		}
+		users = append(users, auth.User{
+			Username:     u.Username,
+			Password:     u.Password,
+			PasswordHash: u.PasswordHash,
+			Role:         u.Role,
+		})
+	}
+	return users, nil
 }
 
 // frontendFS prefers an on-disk build (development) over the embedded one.

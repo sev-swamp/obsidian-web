@@ -38,12 +38,22 @@ type AuthConfig struct {
 	JWTSecret     string      `yaml:"jwtSecret"`
 	TokenTTLHours int         `yaml:"tokenTtlHours"`
 	Admin         AdminConfig `yaml:"admin"`
+	// Users are additional accounts beside the admin. Role defaults to
+	// "viewer" when omitted.
+	Users []UserConfig `yaml:"users"`
 }
 
 type AdminConfig struct {
 	Username     string `yaml:"username"`
 	Password     string `yaml:"password"`     // plaintext (dev only) …
 	PasswordHash string `yaml:"passwordHash"` // … or bcrypt hash (preferred)
+}
+
+type UserConfig struct {
+	Username     string `yaml:"username"`
+	Password     string `yaml:"password"`     // plaintext (dev only) …
+	PasswordHash string `yaml:"passwordHash"` // … or bcrypt hash (preferred)
+	Role         string `yaml:"role"`         // viewer | editor | admin
 }
 
 type WebConfig struct {

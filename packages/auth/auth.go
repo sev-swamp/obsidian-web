@@ -21,6 +21,12 @@ const (
 
 var roleRank = map[string]int{RoleViewer: 1, RoleEditor: 2, RoleAdmin: 3}
 
+// ValidRole reports whether the string names a known role.
+func ValidRole(role string) bool {
+	_, ok := roleRank[role]
+	return ok
+}
+
 // ErrInvalidCredentials is returned on failed login.
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
@@ -48,12 +54,13 @@ type Service struct {
 	users   map[string]User
 }
 
-// NewService builds the auth service from configuration.
+// NewService builds the auth service from configuration. Accounts
+// without an explicit role get the least-privileged one (viewer).
 func NewService(enabled bool, secret string, ttl time.Duration, users []User) *Service {
 	m := map[string]User{}
 	for _, u := range users {
 		if u.Role == "" {
-			u.Role = RoleAdmin
+			u.Role = RoleViewer
 		}
 		m[u.Username] = u
 	}
