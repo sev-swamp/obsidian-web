@@ -2,7 +2,10 @@
 package settings
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -98,8 +101,8 @@ func Load(path string) (*Config, error) {
 			if !os.IsNotExist(err) {
 				return nil, fmt.Errorf("read config: %w", err)
 			}
-		} else if err := yaml.Unmarshal(data, cfg); err != nil {
-			return nil, fmt.Errorf("parse config: %w", err)
+		} else if err := parseStrict(data, cfg); err != nil {
+			return nil, fmt.Errorf("parse config %s: %w", path, err)
 		}
 	}
 	if v := os.Getenv("OBSIDIANWEB_VAULT"); v != "" {
@@ -112,6 +115,21 @@ func Load(path string) (*Config, error) {
 		cfg.Auth.JWTSecret = v
 	}
 	return cfg, nil
+}
+
+// parseStrict decodes YAML rejecting unknown keys, so typos and
+// mis-indented sections (e.g. `users:` landing under `log:`) fail at
+// startup instead of being silently ignored.
+func parseStrict(data []byte, cfg *Config) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(cfg); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil // empty config file: keep defaults
+		}
+		return err
+	}
+	return nil
 }
 
 // Save persists the configuration back to its file.
