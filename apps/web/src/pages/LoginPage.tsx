@@ -18,7 +18,7 @@ export function LoginPage() {
     setError('')
     try {
       const res = await api.login(username, password)
-      setSession(res.token, res.username)
+      setSession(res.token, res.username, res.role, res.permissions ?? [])
       navigate('/')
     } catch (err) {
       setError((err as Error).message)

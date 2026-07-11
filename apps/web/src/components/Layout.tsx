@@ -16,6 +16,7 @@ export function Layout() {
   const token = useAuthStore((s) => s.token)
   const username = useAuthStore((s) => s.username)
   const logout = useAuthStore((s) => s.logout)
+  const canEdit = useAuthStore((s) => s.can)('notes:edit')
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -59,12 +60,14 @@ export function Layout() {
         >
           🔍
         </button>
-        <button
-          onClick={() => setNewNoteOpen(true)}
-          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
-        >
-          + New note
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => setNewNoteOpen(true)}
+            className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            + New note
+          </button>
+        )}
         <button
           onClick={toggle}
           className="rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800"

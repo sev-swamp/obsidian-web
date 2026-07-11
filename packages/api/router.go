@@ -48,35 +48,32 @@ func (s *Server) Router() *gin.Engine {
 	r.POST("/api/auth/login", s.handleLogin)
 	r.GET("/api/auth/status", s.handleAuthStatus)
 
-	viewer := r.Group("/api", s.requireRole(auth.RoleViewer))
+	read := r.Group("/api", s.requirePermission(auth.PermNotesRead))
 	{
-		viewer.GET("/notes", s.handleListNotes)
-		viewer.GET("/note/*path", s.handleGetNote)
-		viewer.GET("/raw/*path", s.handleRawNote)
-		viewer.GET("/tree", s.handleTree)
-		viewer.GET("/search", s.handleSearch)
-		viewer.GET("/recent", s.handleRecent)
-		viewer.GET("/templates", s.handleTemplates)
-		viewer.GET("/attachment/*path", s.handleAttachment)
-		viewer.GET("/settings", s.handleGetSettings)
-		viewer.GET("/obsidian/plugins", s.handleObsidianPlugins)
+		read.GET("/notes", s.handleListNotes)
+		read.GET("/note/*path", s.handleGetNote)
+		read.GET("/raw/*path", s.handleRawNote)
+		read.GET("/tree", s.handleTree)
+		read.GET("/search", s.handleSearch)
+		read.GET("/recent", s.handleRecent)
+		read.GET("/templates", s.handleTemplates)
+		read.GET("/attachment/*path", s.handleAttachment)
+		read.GET("/settings", s.handleGetSettings)
+		read.GET("/obsidian/plugins", s.handleObsidianPlugins)
 	}
 
-	editor := r.Group("/api", s.requireRole(auth.RoleEditor))
+	edit := r.Group("/api", s.requirePermission(auth.PermNotesEdit))
 	{
-		editor.POST("/note", s.handleCreateNote)
-		editor.PUT("/note/*path", s.handleSaveNote)
-		editor.DELETE("/note/*path", s.handleDeleteNote)
-		editor.POST("/upload", s.handleUpload)
+		edit.POST("/note", s.handleCreateNote)
+		edit.PUT("/note/*path", s.handleSaveNote)
 	}
 
-	admin := r.Group("/api", s.requireRole(auth.RoleAdmin))
-	{
-		admin.PUT("/settings", s.handlePutSettings)
-	}
+	r.DELETE("/api/note/*path", s.requirePermission(auth.PermNotesDelete), s.handleDeleteNote)
+	r.POST("/api/upload", s.requirePermission(auth.PermUpload), s.handleUpload)
+	r.PUT("/api/settings", s.requirePermission(auth.PermSettings), s.handlePutSettings)
 
-	// Plugin routes live under /api/plugins/<id>/ (viewer access).
-	pluginGroup := r.Group("/api/plugins", s.requireRole(auth.RoleViewer))
+	// Plugin routes live under /api/plugins/<id>/ (read access).
+	pluginGroup := r.Group("/api/plugins", s.requirePermission(auth.PermNotesRead))
 	if err := s.Plugins.InitAll(pluginGroup); err != nil {
 		s.Log.Error("plugin init failed", "error", err)
 	}
@@ -139,8 +136,9 @@ func devCORS() gin.HandlerFunc {
 	}
 }
 
-// requireRole validates the JWT (when auth is enabled) and enforces RBAC.
-func (s *Server) requireRole(required string) gin.HandlerFunc {
+// requirePermission validates the JWT (when auth is enabled) and checks
+// the permission set embedded in the token.
+func (s *Server) requirePermission(perm string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !s.Auth.Enabled {
 			c.Next()
@@ -161,8 +159,8 @@ func (s *Server) requireRole(required string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
-		if !auth.Allows(claims.Role, required) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
+		if !claims.HasPermission(perm) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "missing permission: " + perm})
 			return
 		}
 		c.Set("user", claims)

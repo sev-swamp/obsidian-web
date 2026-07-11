@@ -55,6 +55,49 @@ func TestLoginRejectsBadCredentials(t *testing.T) {
 	}
 }
 
+func TestTokenCarriesPermissions(t *testing.T) {
+	s := newTestService()
+	cases := map[string][]string{
+		"reader": {PermNotesRead},
+		"writer": {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload},
+		"admin":  {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload, PermSettings},
+	}
+	passwords := map[string]string{"reader": "readerpw", "writer": "s3cret", "admin": "adminpw"}
+	for user, want := range cases {
+		token, _, err := s.Login(user, passwords[user])
+		if err != nil {
+			t.Fatalf("login %s: %v", user, err)
+		}
+		claims, err := s.Validate(token)
+		if err != nil {
+			t.Fatalf("validate %s: %v", user, err)
+		}
+		if len(claims.Permissions) != len(want) {
+			t.Errorf("%s permissions = %v, want %v", user, claims.Permissions, want)
+		}
+		for _, p := range want {
+			if !claims.HasPermission(p) {
+				t.Errorf("%s must have %s", user, p)
+			}
+		}
+	}
+	// Viewer must not gain write permissions.
+	token, _, _ := s.Login("reader", "readerpw")
+	claims, _ := s.Validate(token)
+	for _, p := range []string{PermNotesEdit, PermNotesDelete, PermUpload, PermSettings} {
+		if claims.HasPermission(p) {
+			t.Errorf("viewer must not have %s", p)
+		}
+	}
+}
+
+func TestHasPermissionLegacyTokenFallsBackToRole(t *testing.T) {
+	c := &Claims{Role: RoleEditor} // token issued before the permissions claim existed
+	if !c.HasPermission(PermNotesEdit) || c.HasPermission(PermSettings) {
+		t.Error("legacy token must fall back to the role permission map")
+	}
+}
+
 func TestRoleHierarchy(t *testing.T) {
 	if !Allows(RoleAdmin, RoleViewer) || !Allows(RoleEditor, RoleViewer) {
 		t.Error("higher roles must include lower ones")

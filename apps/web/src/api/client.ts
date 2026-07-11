@@ -6,7 +6,7 @@ import type {
   Settings,
   TreeNode,
 } from './types'
-import { useAuthStore } from '../store/auth'
+import { useAuthStore, type Permission } from '../store/auth'
 
 class ApiError extends Error {
   constructor(
@@ -63,7 +63,12 @@ export const api = {
   settings: () => request<Settings>('/api/settings'),
   authStatus: () => request<{ authEnabled: boolean }>('/api/auth/status'),
   login: (username: string, password: string) =>
-    request<{ token: string; username: string; role: string }>('/api/auth/login', {
+    request<{
+      token: string
+      username: string
+      role: string
+      permissions: Permission[]
+    }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),

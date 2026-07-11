@@ -27,6 +27,31 @@ func ValidRole(role string) bool {
 	return ok
 }
 
+// Permissions embedded into JWT tokens. The API enforces them and the
+// frontend uses them to show or hide actions. The role → permission
+// mapping is documented in docs/api.md.
+const (
+	PermNotesRead   = "notes:read"
+	PermNotesEdit   = "notes:edit"
+	PermNotesDelete = "notes:delete"
+	PermUpload      = "files:upload"
+	PermSettings    = "settings:write"
+)
+
+var rolePermissions = map[string][]string{
+	RoleViewer: {PermNotesRead},
+	RoleEditor: {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload},
+	RoleAdmin:  {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload, PermSettings},
+}
+
+// PermissionsForRole returns the permission set granted by a role.
+func PermissionsForRole(role string) []string {
+	perms := rolePermissions[role]
+	out := make([]string, len(perms))
+	copy(out, perms)
+	return out
+}
+
 // ErrInvalidCredentials is returned on failed login.
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
@@ -40,9 +65,25 @@ type User struct {
 
 // Claims are the JWT claims issued by the service.
 type Claims struct {
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	Username    string   `json:"username"`
+	Role        string   `json:"role"`
+	Permissions []string `json:"permissions,omitempty"`
 	jwt.RegisteredClaims
+}
+
+// HasPermission checks the permission list embedded in the token.
+// Tokens issued before permissions existed fall back to the role map.
+func (c *Claims) HasPermission(perm string) bool {
+	perms := c.Permissions
+	if len(perms) == 0 {
+		perms = rolePermissions[c.Role]
+	}
+	for _, p := range perms {
+		if p == perm {
+			return true
+		}
+	}
+	return false
 }
 
 // Service issues and validates JWT tokens. When disabled, every request
@@ -87,8 +128,9 @@ func (s *Service) Login(username, password string) (string, *Claims, error) {
 	}
 
 	claims := &Claims{
-		Username: u.Username,
-		Role:     u.Role,
+		Username:    u.Username,
+		Role:        u.Role,
+		Permissions: PermissionsForRole(u.Role),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

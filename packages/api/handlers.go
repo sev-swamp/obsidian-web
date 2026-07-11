@@ -234,7 +234,12 @@ func (s *Server) handleLogin(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"token": token, "username": claims.Username, "role": claims.Role})
+	c.JSON(http.StatusOK, gin.H{
+		"token":       token,
+		"username":    claims.Username,
+		"role":        claims.Role,
+		"permissions": claims.Permissions,
+	})
 }
 
 func (s *Server) handleAuthStatus(c *gin.Context) {

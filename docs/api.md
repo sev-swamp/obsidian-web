@@ -4,25 +4,42 @@ Base URL: `http://<host>:8787`. All payloads are JSON. Note paths are
 vault-relative; the `.md` extension is optional in requests.
 
 When auth is enabled, send `Authorization: Bearer <token>` (or `?token=`
-for media/WebSocket). Roles: `viewer` < `editor` < `admin`.
+for media/WebSocket).
+
+## Roles and permissions
+
+Each JWT carries a `permissions` claim derived from the user's role at
+login. The API enforces these permissions per endpoint and the frontend
+uses the same list to show or hide actions (edit, delete, new note).
+
+| Permission       | Grants                                        | viewer | editor | admin |
+| ---------------- | --------------------------------------------- | :----: | :----: | :---: |
+| `notes:read`     | read notes, tree, search, attachments, templates | ✅  | ✅     | ✅    |
+| `notes:edit`     | create and save notes                         | —      | ✅     | ✅    |
+| `notes:delete`   | delete notes                                  | —      | ✅     | ✅    |
+| `files:upload`   | upload attachments                            | —      | ✅     | ✅    |
+| `settings:write` | change platform settings                      | —      | —      | ✅    |
+
+The mapping lives in `packages/auth` (`rolePermissions`). A response to
+a request lacking a permission is `403 {"error":"missing permission: …"}`.
 
 ## Auth
 
-| Method | Path               | Description                                  |
-| ------ | ------------------ | -------------------------------------------- |
-| POST   | `/api/auth/login`  | `{username, password}` → `{token, role}`     |
-| GET    | `/api/auth/status` | `{authEnabled}`                              |
+| Method | Path               | Description                                              |
+| ------ | ------------------ | -------------------------------------------------------- |
+| POST   | `/api/auth/login`  | `{username, password}` → `{token, role, permissions}`    |
+| GET    | `/api/auth/status` | `{authEnabled}`                                          |
 
-## Notes (viewer / editor)
+## Notes
 
-| Method | Path                 | Role   | Description                                   |
-| ------ | -------------------- | ------ | --------------------------------------------- |
-| GET    | `/api/notes`         | viewer | All note metadata                             |
-| GET    | `/api/note/{path}`   | viewer | Note: content, rendered `html`, frontmatter, backlinks |
-| GET    | `/api/raw/{path}`    | viewer | Raw markdown                                  |
-| POST   | `/api/note`          | editor | Create note (body below) → created note       |
-| PUT    | `/api/note/{path}`   | editor | `{content}` — save note                       |
-| DELETE | `/api/note/{path}`   | editor | Delete note                                   |
+| Method | Path                 | Permission     | Description                                   |
+| ------ | -------------------- | -------------- | --------------------------------------------- |
+| GET    | `/api/notes`         | `notes:read`   | All note metadata                             |
+| GET    | `/api/note/{path}`   | `notes:read`   | Note: content, rendered `html`, frontmatter, backlinks |
+| GET    | `/api/raw/{path}`    | `notes:read`   | Raw markdown                                  |
+| POST   | `/api/note`          | `notes:edit`   | Create note (body below) → created note       |
+| PUT    | `/api/note/{path}`   | `notes:edit`   | `{content}` — save note                       |
+| DELETE | `/api/note/{path}`   | `notes:delete` | Delete note                                   |
 
 `POST /api/note` body:
 
@@ -39,24 +56,24 @@ for media/WebSocket). Roles: `viewer` < `editor` < `admin`.
 
 ## Vault
 
-| Method | Path                     | Role   | Description                          |
-| ------ | ------------------------ | ------ | ------------------------------------ |
-| GET    | `/api/tree`              | viewer | Directory tree                       |
-| GET    | `/api/search?q=&limit=`  | viewer | Full-text search (`tag:x`, `path:x`) |
-| GET    | `/api/recent?limit=`     | viewer | Recently modified notes              |
-| GET    | `/api/templates`         | viewer | Available template names             |
-| GET    | `/api/attachment/{path}` | viewer | Raw file (images, PDF, audio, video; supports Range) |
-| POST   | `/api/upload`            | editor | multipart `file` (+ optional `folder`) → `{path}` |
+| Method | Path                     | Permission     | Description                          |
+| ------ | ------------------------ | -------------- | ------------------------------------ |
+| GET    | `/api/tree`              | `notes:read`   | Directory tree                       |
+| GET    | `/api/search?q=&limit=`  | `notes:read`   | Full-text search (`tag:x`, `path:x`) |
+| GET    | `/api/recent?limit=`     | `notes:read`   | Recently modified notes              |
+| GET    | `/api/templates`         | `notes:read`   | Available template names             |
+| GET    | `/api/attachment/{path}` | `notes:read`   | Raw file (images, PDF, audio, video; supports Range) |
+| POST   | `/api/upload`            | `files:upload` | multipart `file` (+ optional `folder`) → `{path}` |
 
 ## Settings & meta
 
-| Method | Path                    | Role   | Description                             |
-| ------ | ----------------------- | ------ | --------------------------------------- |
-| GET    | `/api/settings`         | viewer | Note rules + vault dirs                 |
-| PUT    | `/api/settings`         | admin  | `{notes: NoteRules}` — persisted to config |
-| GET    | `/api/health`           | —      | Liveness                                |
-| GET    | `/api/obsidian/plugins` | viewer | Installed Obsidian community plugins    |
-| GET    | `/api/plugins/{id}/…`   | viewer | Routes registered by platform plugins   |
+| Method | Path                    | Permission       | Description                             |
+| ------ | ----------------------- | ---------------- | --------------------------------------- |
+| GET    | `/api/settings`         | `notes:read`     | Note rules + vault dirs                 |
+| PUT    | `/api/settings`         | `settings:write` | `{notes: NoteRules}` — persisted to config |
+| GET    | `/api/health`           | —                | Liveness                                |
+| GET    | `/api/obsidian/plugins` | `notes:read`     | Installed Obsidian community plugins    |
+| GET    | `/api/plugins/{id}/…`   | `notes:read`     | Routes registered by platform plugins   |
 
 ## WebSocket `/ws`
 

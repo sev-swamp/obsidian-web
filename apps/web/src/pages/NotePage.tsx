@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { Breadcrumbs } from '../components/Breadcrumbs'
 import { MarkdownView } from '../components/MarkdownView'
+import { useAuthStore } from '../store/auth'
 
 export function NotePage() {
   const params = useParams()
@@ -13,6 +14,9 @@ export function NotePage() {
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const can = useAuthStore((s) => s.can)
+  const canEdit = can('notes:edit')
+  const canDelete = can('notes:delete')
 
   const {
     data: note,
@@ -100,23 +104,27 @@ export function NotePage() {
             </>
           ) : (
             <>
-              <button
-                onClick={() => {
-                  setDraft(note.content)
-                  setEditing(true)
-                }}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm(`Delete "${note.title}"?`)) remove.mutate()
-                }}
-                className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-              >
-                Delete
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => {
+                    setDraft(note.content)
+                    setEditing(true)
+                  }}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  Edit
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete "${note.title}"?`)) remove.mutate()
+                  }}
+                  className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                >
+                  Delete
+                </button>
+              )}
             </>
           )}
         </div>
