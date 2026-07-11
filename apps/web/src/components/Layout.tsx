@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Link, Outlet } from 'react-router-dom'
+import { Link, Outlet, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { FileTree } from './FileTree'
 import { RecentList } from './RecentList'
 import { SearchDialog } from './SearchDialog'
 import { NewNoteDialog } from './NewNoteDialog'
+import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 
 export function Layout() {
@@ -11,6 +13,11 @@ export function Layout() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [newNoteOpen, setNewNoteOpen] = useState(false)
   const { theme, toggle } = useThemeStore()
+  const token = useAuthStore((s) => s.token)
+  const username = useAuthStore((s) => s.username)
+  const logout = useAuthStore((s) => s.logout)
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -65,6 +72,21 @@ export function Layout() {
         >
           {theme === 'dark' ? '☀️' : '🌙'}
         </button>
+        {token && (
+          <button
+            onClick={() => {
+              logout()
+              queryClient.clear() // drop data cached for the previous user
+              navigate('/login')
+            }}
+            title={username ? `Signed in as ${username} — sign out` : 'Sign out'}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm text-gray-600 hover:border-red-400 hover:text-red-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-red-700 dark:hover:text-red-400"
+          >
+            {username && <span className="hidden sm:inline">{username}</span>}
+            <span aria-hidden>⎋</span>
+            <span className="sr-only">Sign out</span>
+          </button>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1">
