@@ -1,0 +1,51 @@
+# Obsidian Web configuration.
+# Copy to config.yaml and adjust. Environment overrides:
+#   OBSIDIANWEB_VAULT, OBSIDIANWEB_ADDR, OBSIDIANWEB_JWT_SECRET
+
+server:
+  addr: ":8787"
+  # Allow cross-origin requests (only for frontend development).
+  devCors: false
+
+vault:
+  # Path to your existing Obsidian vault. It is used in place — nothing
+  # is copied or imported.
+  path: "./examples/vault"
+  # Folder inside the vault holding note templates.
+  templatesDir: "Templates"
+  # Default folder for uploaded attachments.
+  attachmentsDir: "attachments"
+
+notes:
+  # Where new notes go when no folder is chosen.
+  defaultFolder: "Inbox"
+  # Per-type folders used by the note creation API (type -> folder).
+  typeFolders:
+    daily: "Daily"
+    meeting: "Meetings"
+    book: "Books"
+    idea: "Ideas"
+    project: "Projects"
+  # Generate YAML frontmatter automatically for new notes.
+  autoFrontmatter: true
+
+auth:
+  # Disabled by default: ideal for a private, local instance.
+  enabled: false
+  # Required when enabled (or set OBSIDIANWEB_JWT_SECRET).
+  jwtSecret: ""
+  tokenTtlHours: 24
+  admin:
+    username: "admin"
+    # Either a plaintext password (development only)…
+    password: ""
+    # …or a bcrypt hash (production): htpasswd -bnBC 10 "" 'secret' | tr -d ':\n'
+    passwordHash: ""
+
+web:
+  # Serve the frontend from a directory instead of the embedded build
+  # (useful during development). Empty = use the embedded frontend.
+  staticDir: ""
+
+log:
+  level: "info" # debug | info | warn | error

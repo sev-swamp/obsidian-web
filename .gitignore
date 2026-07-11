@@ -1,0 +1,15 @@
+# Binaries
+bin/
+
+# Frontend
+node_modules/
+apps/web/dist/*
+!apps/web/dist/.gitkeep
+
+# Local configuration and data
+config.yaml
+export/
+
+# OS / editor
+.DS_Store
+*.log

@@ -1,0 +1,14 @@
+services:
+  obsidianweb:
+    build: .
+    ports:
+      - "8787:8787"
+    volumes:
+      # Mount your existing Obsidian vault (read-write).
+      - ./examples/vault:/vault
+      # External configuration file.
+      - ./config:/config:ro
+    environment:
+      - OBSIDIANWEB_VAULT=/vault
+      # - OBSIDIANWEB_JWT_SECRET=change-me
+    restart: unless-stopped

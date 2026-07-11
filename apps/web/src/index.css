@@ -1,0 +1,164 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rendered markdown                                                    */
+/* ------------------------------------------------------------------ */
+
+.markdown {
+  line-height: 1.7;
+  word-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  font-weight: 700;
+  margin: 1.4em 0 0.5em;
+  scroll-margin-top: 5rem;
+}
+
+.markdown h1 { font-size: 1.75rem; }
+.markdown h2 { font-size: 1.4rem; }
+.markdown h3 { font-size: 1.15rem; }
+
+.markdown p { margin: 0.6em 0; }
+
+.markdown a {
+  color: #7c3aed;
+  text-decoration: none;
+}
+.dark .markdown a { color: #a78bfa; }
+.markdown a:hover { text-decoration: underline; }
+.markdown a[href*='missing=1'] { color: #9ca3af; }
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.5em;
+  margin: 0.6em 0;
+}
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+
+.markdown li { margin: 0.2em 0; }
+.markdown li.task-list-item { list-style: none; margin-left: -1.2em; }
+.markdown li.task-list-item input { margin-right: 0.45em; accent-color: #7c3aed; }
+
+.markdown blockquote {
+  border-left: 3px solid #d1d5db;
+  padding: 0.1em 1em;
+  margin: 0.8em 0;
+  color: #6b7280;
+}
+.dark .markdown blockquote { border-color: #4b5563; color: #9ca3af; }
+
+.markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+  background: rgba(125, 125, 125, 0.14);
+  border-radius: 4px;
+  padding: 0.15em 0.35em;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  padding: 0.9em 1.1em;
+  margin: 0.9em 0;
+  background: #f6f8fa;
+  border: 1px solid rgba(125, 125, 125, 0.2);
+}
+.dark .markdown pre { filter: invert(0.93) hue-rotate(180deg); }
+.markdown pre code { background: none; padding: 0; font-size: 0.85rem; }
+
+.markdown pre.mermaid {
+  background: transparent;
+  border: none;
+  display: flex;
+  justify-content: center;
+}
+.dark .markdown pre.mermaid { filter: none; }
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  font-size: 0.925rem;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid #e5e7eb;
+  padding: 0.45em 0.8em;
+  text-align: left;
+}
+.dark .markdown th,
+.dark .markdown td { border-color: #374151; }
+.markdown th { background: rgba(125, 125, 125, 0.09); font-weight: 600; }
+
+.markdown img,
+.markdown video {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.5em 0;
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 1.5em 0;
+}
+.dark .markdown hr { border-color: #374151; }
+
+/* ------------------------------------------------------------------ */
+/* Obsidian callouts                                                    */
+/* ------------------------------------------------------------------ */
+
+.markdown blockquote.callout {
+  border: none;
+  border-left: 4px solid var(--callout-color, #3b82f6);
+  background: color-mix(in srgb, var(--callout-color, #3b82f6) 8%, transparent);
+  border-radius: 6px;
+  padding: 0.7em 1em;
+  color: inherit;
+}
+
+.markdown .callout-title {
+  display: block;
+  font-weight: 700;
+  color: var(--callout-color, #3b82f6);
+  margin-bottom: 0.2em;
+}
+
+.markdown blockquote.callout-note,
+.markdown blockquote.callout-info { --callout-color: #3b82f6; }
+.markdown blockquote.callout-tip,
+.markdown blockquote.callout-hint,
+.markdown blockquote.callout-success,
+.markdown blockquote.callout-check,
+.markdown blockquote.callout-done { --callout-color: #10b981; }
+.markdown blockquote.callout-warning,
+.markdown blockquote.callout-caution,
+.markdown blockquote.callout-attention { --callout-color: #f59e0b; }
+.markdown blockquote.callout-danger,
+.markdown blockquote.callout-error,
+.markdown blockquote.callout-bug,
+.markdown blockquote.callout-fail,
+.markdown blockquote.callout-failure { --callout-color: #ef4444; }
+.markdown blockquote.callout-question,
+.markdown blockquote.callout-help,
+.markdown blockquote.callout-faq { --callout-color: #f97316; }
+.markdown blockquote.callout-example { --callout-color: #8b5cf6; }
+.markdown blockquote.callout-quote,
+.markdown blockquote.callout-cite { --callout-color: #6b7280; }
+.markdown blockquote.callout-abstract,
+.markdown blockquote.callout-summary,
+.markdown blockquote.callout-tldr { --callout-color: #06b6d4; }
+.markdown blockquote.callout-todo { --callout-color: #3b82f6; }
