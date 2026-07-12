@@ -103,6 +103,12 @@ func run(configPath, vaultOverride string) error {
 
 	pluginManager := plugins.NewManager(bus, notes, vault, log)
 	pluginManager.Register(&builtin.StatsPlugin{})
+	pluginManager.RegisterUI(plugins.UIPlugin{
+		ID:          "recent-changes",
+		Name:        "Recent changes",
+		Version:     "1.0.0",
+		Description: "Sidebar section with the most recently modified notes.",
+	})
 
 	// Initial index, then keep it fresh through the file watcher.
 	if err := notes.ReindexAll(); err != nil {

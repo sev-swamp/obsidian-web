@@ -14,13 +14,34 @@ import (
 	pluginsdk "github.com/obsidianweb/obsidianweb/sdk/plugin-sdk"
 )
 
+// UIPlugin describes a frontend feature toggleable like a plugin
+// (e.g. the "Recent changes" sidebar section). It has no backend code;
+// the frontend consults /api/plugins to show or hide it.
+type UIPlugin struct {
+	ID          string
+	Name        string
+	Version     string
+	Description string
+}
+
+// PluginStatus is the unified view served by GET /api/plugins.
+type PluginStatus struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Kind        string `json:"kind"` // backend | ui
+	Enabled     bool   `json:"enabled"`
+}
+
 // Manager registers and initializes plugins.
 type Manager struct {
-	bus     core.EventBus
-	notes   *core.NoteService
-	vault   core.VaultFS
-	log     *slog.Logger
-	plugins []pluginsdk.Plugin
+	bus       core.EventBus
+	notes     *core.NoteService
+	vault     core.VaultFS
+	log       *slog.Logger
+	plugins   []pluginsdk.Plugin
+	uiPlugins []UIPlugin
 }
 
 // NewManager creates a plugin manager.
@@ -36,6 +57,11 @@ func (m *Manager) Register(p pluginsdk.Plugin) {
 	m.plugins = append(m.plugins, p)
 }
 
+// RegisterUI adds a toggleable frontend feature to the plugin list.
+func (m *Manager) RegisterUI(p UIPlugin) {
+	m.uiPlugins = append(m.uiPlugins, p)
+}
+
 // Manifests lists registered plugin manifests.
 func (m *Manager) Manifests() []pluginsdk.Manifest {
 	out := make([]pluginsdk.Manifest, 0, len(m.plugins))
@@ -45,9 +71,52 @@ func (m *Manager) Manifests() []pluginsdk.Manifest {
 	return out
 }
 
+// Statuses returns every plugin (backend and UI) with its enabled
+// state. enabled may be nil (everything enabled).
+func (m *Manager) Statuses(enabled func(id string) bool) []PluginStatus {
+	isEnabled := func(id string) bool {
+		if enabled == nil {
+			return true
+		}
+		return enabled(id)
+	}
+	out := make([]PluginStatus, 0, len(m.plugins)+len(m.uiPlugins))
+	for _, p := range m.plugins {
+		mf := p.Manifest()
+		out = append(out, PluginStatus{
+			ID: mf.ID, Name: mf.Name, Version: mf.Version,
+			Description: mf.Description, Kind: "backend", Enabled: isEnabled(mf.ID),
+		})
+	}
+	for _, p := range m.uiPlugins {
+		out = append(out, PluginStatus{
+			ID: p.ID, Name: p.Name, Version: p.Version,
+			Description: p.Description, Kind: "ui", Enabled: isEnabled(p.ID),
+		})
+	}
+	return out
+}
+
+// Known reports whether a plugin id is registered.
+func (m *Manager) Known(id string) bool {
+	for _, p := range m.plugins {
+		if p.Manifest().ID == id {
+			return true
+		}
+	}
+	for _, p := range m.uiPlugins {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // InitAll initializes every plugin and mounts its routes under
-// /api/plugins/<id>/ in the provided router group.
-func (m *Manager) InitAll(routerGroup *gin.RouterGroup) error {
+// /api/plugins/<id>/ in the provided router group. Routes of disabled
+// plugins answer 404 (enabled is consulted per request, so toggling
+// needs no restart).
+func (m *Manager) InitAll(routerGroup *gin.RouterGroup, enabled func(id string) bool) error {
 	for _, p := range m.plugins {
 		manifest := p.Manifest()
 		if !compatibleAPI(manifest.APIVersion) {
@@ -55,10 +124,18 @@ func (m *Manager) InitAll(routerGroup *gin.RouterGroup) error {
 				"plugin", manifest.ID, "pluginApi", manifest.APIVersion, "hostApi", pluginsdk.APIVersion)
 			continue
 		}
+		id := manifest.ID
+		sub := routerGroup.Group("/"+id, func(c *gin.Context) {
+			if enabled != nil && !enabled(id) {
+				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "plugin disabled"})
+				return
+			}
+			c.Next()
+		})
 		host := &host{
 			manager: m,
 			id:      manifest.ID,
-			routes:  &ginRoutes{group: routerGroup.Group("/" + manifest.ID)},
+			routes:  &ginRoutes{group: sub},
 			log:     m.log.With("plugin", manifest.ID),
 		}
 		if err := p.Init(host); err != nil {

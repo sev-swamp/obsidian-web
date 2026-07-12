@@ -107,6 +107,8 @@ type fileData struct {
 	Groups []string     `yaml:"groups"`
 	ACL    []Rule       `yaml:"acl"`
 	SSO    *SSOConfig   `yaml:"sso,omitempty"`
+	// Plugins holds per-plugin enabled state; absent = enabled.
+	Plugins map[string]bool `yaml:"plugins,omitempty"`
 }
 
 // Store holds users, groups and ACL rules backed by users.yaml.
@@ -116,9 +118,10 @@ type Store struct {
 	mu     sync.RWMutex
 	users  map[string]*UserRecord
 	order  []string // stable listing order
-	groups []string // explicitly declared groups
-	rules  []Rule
-	sso    SSOConfig
+	groups  []string // explicitly declared groups
+	rules   []Rule
+	sso     SSOConfig
+	plugins map[string]bool
 }
 
 // Load reads users.yaml; a missing file yields an empty store that will
@@ -143,6 +146,7 @@ func (s *Store) Reload() error {
 			s.groups = nil
 			s.rules = nil
 			s.sso = SSOConfig{}
+			s.plugins = nil
 			s.mu.Unlock()
 			return nil
 		}
@@ -177,6 +181,7 @@ func (s *Store) Reload() error {
 	} else {
 		s.sso = SSOConfig{}
 	}
+	s.plugins = data.Plugins
 	s.mu.Unlock()
 	return nil
 }
@@ -184,7 +189,7 @@ func (s *Store) Reload() error {
 // Save persists the store atomically (tmp + rename).
 func (s *Store) Save() error {
 	s.mu.RLock()
-	data := fileData{ACL: s.rules, Groups: s.groups}
+	data := fileData{ACL: s.rules, Groups: s.groups, Plugins: s.plugins}
 	if s.sso != (SSOConfig{}) {
 		sso := s.sso
 		data.SSO = &sso
@@ -536,6 +541,27 @@ func (s *Store) DeleteGroup(name string) error {
 			}
 		}
 	}
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// PluginEnabled reports whether a plugin is enabled (default: yes).
+func (s *Store) PluginEnabled(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if v, ok := s.plugins[id]; ok {
+		return v
+	}
+	return true
+}
+
+// SetPluginEnabled toggles and persists a plugin's enabled state.
+func (s *Store) SetPluginEnabled(id string, enabled bool) error {
+	s.mu.Lock()
+	if s.plugins == nil {
+		s.plugins = map[string]bool{}
+	}
+	s.plugins[id] = enabled
 	s.mu.Unlock()
 	return s.Save()
 }

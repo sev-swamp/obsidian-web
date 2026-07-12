@@ -85,6 +85,7 @@ func (s *Server) Router() *gin.Engine {
 		read.GET("/attachment/*path", s.handleAttachment)
 		read.GET("/settings", s.handleGetSettings)
 		read.GET("/obsidian/plugins", s.handleObsidianPlugins)
+		read.GET("/plugins", s.handleListPlugins)
 	}
 
 	// History viewing has its own permission (history:read).
@@ -121,6 +122,7 @@ func (s *Server) Router() *gin.Engine {
 		admin.DELETE("/groups/:name", s.handleAdminDeleteGroup)
 		admin.GET("/sso", s.handleAdminGetSSO)
 		admin.PUT("/sso", s.handleAdminPutSSO)
+		admin.PUT("/plugins/:id", s.handleAdminSetPlugin)
 		admin.GET("/check", s.handleAdminCheck)
 		admin.POST("/reload", s.handleAdminReload)
 	}
@@ -134,7 +136,7 @@ func (s *Server) Router() *gin.Engine {
 
 	// Plugin routes live under /api/plugins/<id>/ (read access).
 	pluginGroup := r.Group("/api/plugins", s.requirePermission(auth.PermNotesRead))
-	if err := s.Plugins.InitAll(pluginGroup); err != nil {
+	if err := s.Plugins.InitAll(pluginGroup, s.pluginEnabled); err != nil {
 		s.Log.Error("plugin init failed", "error", err)
 	}
 

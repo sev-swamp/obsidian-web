@@ -98,6 +98,15 @@ export interface AclRule {
   special?: 'owner' | ''
 }
 
+export interface PluginStatus {
+  id: string
+  name: string
+  version: string
+  description: string
+  kind: 'backend' | 'ui'
+  enabled: boolean
+}
+
 export interface GroupInfo {
   name: string
   members: string[]

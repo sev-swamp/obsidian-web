@@ -288,6 +288,44 @@ func (s *Server) handleAdminPutSSO(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sso": cfg})
 }
 
+// --- plugins ----------------------------------------------------------------
+
+// pluginEnabled resolves the persisted enabled state (default: on).
+func (s *Server) pluginEnabled(id string) bool {
+	if s.ACL == nil {
+		return true
+	}
+	return s.ACL.PluginEnabled(id)
+}
+
+func (s *Server) handleListPlugins(c *gin.Context) {
+	c.JSON(http.StatusOK, s.Plugins.Statuses(s.pluginEnabled))
+}
+
+func (s *Server) handleAdminSetPlugin(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	id := c.Param("id")
+	if !s.Plugins.Known(id) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "unknown plugin: " + id})
+		return
+	}
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled (boolean) is required"})
+		return
+	}
+	if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, s.Plugins.Statuses(s.pluginEnabled))
+}
+
 // --- personal API tokens --------------------------------------------------
 
 func claimsOf(c *gin.Context) *auth.Claims {

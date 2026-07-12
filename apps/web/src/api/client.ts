@@ -3,6 +3,7 @@ import type {
   AdminUser,
   ApiTokenRecord,
   GroupInfo,
+  PluginStatus,
   SsoConfig,
   CreateNoteRequest,
   DeletedFile,
@@ -139,6 +140,12 @@ export const api = {
       body: JSON.stringify({ sso }),
     }),
   ssoStatus: () => request<{ enabled: boolean; name: string }>('/api/auth/sso/status'),
+  plugins: () => request<PluginStatus[]>('/api/plugins'),
+  adminSetPlugin: (id: string, enabled: boolean) =>
+    request<PluginStatus[]>(`/api/admin/plugins/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
   me: (token: string) =>
     request<{ username: string; role: string; permissions: Permission[] }>('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` },

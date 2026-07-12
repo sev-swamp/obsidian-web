@@ -12,13 +12,14 @@ const btnCls =
 const primaryBtnCls =
   'rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50'
 
-type Tab = 'users' | 'groups' | 'access' | 'tokens' | 'sso'
+type Tab = 'users' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso'
 
 const tabs: { id: Tab; label: TKey }[] = [
   { id: 'users', label: 'tabUsers' },
   { id: 'groups', label: 'tabGroups' },
   { id: 'access', label: 'tabAccess' },
   { id: 'tokens', label: 'tabTokens' },
+  { id: 'plugins', label: 'tabPlugins' },
   { id: 'sso', label: 'tabSSO' },
 ]
 
@@ -51,6 +52,7 @@ export function SettingsPage() {
         {tab === 'groups' && <GroupsSection />}
         {tab === 'access' && <AccessSection />}
         {tab === 'tokens' && <TokensSection />}
+        {tab === 'plugins' && <PluginsSection />}
         {tab === 'sso' && <SsoSection />}
       </div>
     </div>
@@ -519,6 +521,59 @@ function TokensSection() {
             {issued}
           </code>
         </div>
+      )}
+    </section>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* Plugins                                                            */
+/* ---------------------------------------------------------------- */
+
+function PluginsSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const { data: pluginList } = useQuery({ queryKey: ['plugins'], queryFn: api.plugins })
+
+  const toggle = useMutation({
+    mutationFn: (vars: { id: string; enabled: boolean }) =>
+      api.adminSetPlugin(vars.id, vars.enabled),
+    onSuccess: (statuses) => {
+      queryClient.setQueryData(['plugins'], statuses)
+    },
+  })
+
+  return (
+    <section className="space-y-2">
+      {pluginList?.map((p) => (
+        <div
+          key={p.id}
+          className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">
+              {p.name}{' '}
+              <span className="text-xs font-normal text-gray-400">
+                v{p.version} ·{' '}
+                {p.kind === 'backend' ? t('pluginKindBackend') : t('pluginKindUI')}
+              </span>
+            </div>
+            <div className="text-xs text-gray-400">{p.description}</div>
+          </div>
+          <label className="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={p.enabled}
+              disabled={toggle.isPending}
+              onChange={(e) => toggle.mutate({ id: p.id, enabled: e.target.checked })}
+              className="h-4 w-4 accent-violet-600"
+            />
+            {t('pluginEnabled')}
+          </label>
+        </div>
+      ))}
+      {toggle.error && (
+        <p className="text-sm text-red-500">{(toggle.error as Error).message}</p>
       )}
     </section>
   )

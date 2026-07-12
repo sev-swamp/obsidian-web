@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Outlet } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api/client'
 import { FileTree } from './FileTree'
 import { RecentList } from './RecentList'
 import { SearchDialog } from './SearchDialog'
@@ -18,6 +20,10 @@ export function Layout() {
   const { theme, toggle } = useThemeStore()
   const canEdit = useAuthStore((s) => s.can)('notes:edit')
   const t = useT()
+
+  const { data: pluginList } = useQuery({ queryKey: ['plugins'], queryFn: api.plugins })
+  const recentEnabled =
+    pluginList?.find((p) => p.id === 'recent-changes')?.enabled ?? true
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -92,7 +98,7 @@ export function Layout() {
         >
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <FileTree onNavigate={() => setSidebarOpen(false)} />
-            <RecentList onNavigate={() => setSidebarOpen(false)} />
+            {recentEnabled && <RecentList onNavigate={() => setSidebarOpen(false)} />}
           </div>
           <div className="p-2">
             <UserMenu />
