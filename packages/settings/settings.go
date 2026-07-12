@@ -18,9 +18,10 @@ type Config struct {
 	Server ServerConfig   `yaml:"server"`
 	Vault  VaultConfig    `yaml:"vault"`
 	Notes  core.NoteRules `yaml:"notes"`
-	Auth   AuthConfig     `yaml:"auth"`
-	Web    WebConfig      `yaml:"web"`
-	Log    LogConfig      `yaml:"log"`
+	Auth    AuthConfig     `yaml:"auth"`
+	History HistoryConfig  `yaml:"history"`
+	Web     WebConfig      `yaml:"web"`
+	Log     LogConfig      `yaml:"log"`
 
 	path string // file the config was loaded from
 }
@@ -59,6 +60,17 @@ type UserConfig struct {
 	Role         string `yaml:"role"`         // viewer | editor | admin
 }
 
+type HistoryConfig struct {
+	// Enabled turns on git-backed change history (managed mode creates
+	// a .git repository inside the vault).
+	Enabled bool `yaml:"enabled"`
+	// Mode: managed (platform commits) | external (existing repo, read-only).
+	Mode string `yaml:"mode"`
+	// ExternalDebounceSec coalesces direct file-system edits into one
+	// revision per file per interval.
+	ExternalDebounceSec int `yaml:"externalDebounceSec"`
+}
+
 type WebConfig struct {
 	// StaticDir overrides the embedded frontend (useful in development).
 	StaticDir string `yaml:"staticDir"`
@@ -85,6 +97,11 @@ func Default() *Config {
 		Auth: AuthConfig{
 			TokenTTLHours: 24,
 			Admin:         AdminConfig{Username: "admin"},
+		},
+		History: HistoryConfig{
+			Enabled:             true,
+			Mode:                "managed",
+			ExternalDebounceSec: 45,
 		},
 		Log: LogConfig{Level: "info"},
 	}

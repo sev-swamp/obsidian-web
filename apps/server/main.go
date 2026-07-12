@@ -20,6 +20,7 @@ import (
 	"github.com/obsidianweb/obsidianweb/packages/auth"
 	"github.com/obsidianweb/obsidianweb/packages/core"
 	"github.com/obsidianweb/obsidianweb/packages/filesystem"
+	"github.com/obsidianweb/obsidianweb/packages/history"
 	"github.com/obsidianweb/obsidianweb/packages/links"
 	"github.com/obsidianweb/obsidianweb/packages/markdown"
 	"github.com/obsidianweb/obsidianweb/packages/obsidian"
@@ -66,6 +67,15 @@ func run(configPath, vaultOverride string) error {
 	templateEngine := templates.NewEngine(vault, cfg.Vault.TemplatesDir)
 	notes := core.NewNoteService(vault, renderer, linkIndex, searchIndex, templateEngine, bus, cfg.Notes, log)
 
+	if cfg.History.Enabled && cfg.History.Mode != "off" {
+		hist, err := history.Open(vault.Root(), cfg.History.Mode, log)
+		if err != nil {
+			log.Warn("history disabled", "error", err)
+		} else {
+			notes.AttachHistory(hist, time.Duration(cfg.History.ExternalDebounceSec)*time.Second)
+		}
+	}
+
 	if cfg.Auth.Enabled && cfg.Auth.JWTSecret == "" {
 		return errors.New("auth.enabled requires auth.jwtSecret (or OBSIDIANWEB_JWT_SECRET)")
 	}
@@ -76,7 +86,7 @@ func run(configPath, vaultOverride string) error {
 	authService := auth.NewService(cfg.Auth.Enabled, cfg.Auth.JWTSecret,
 		time.Duration(cfg.Auth.TokenTTLHours)*time.Hour, users)
 
-	hub := websocket.NewHub(bus, log)
+	hub := websocket.NewHub(bus, nil, log)
 
 	pluginManager := plugins.NewManager(bus, notes, vault, log)
 	pluginManager.Register(&builtin.StatsPlugin{})

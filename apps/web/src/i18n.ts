@@ -61,6 +61,27 @@ const en = {
   passwordLabel: 'Password',
   signIn: 'Sign in',
 
+  // History & conflicts
+  historyBtn: 'History',
+  noHistory: 'No history yet',
+  restoreAction: 'Restore',
+  restoreConfirm: 'Restore this version?',
+  conflictTitle: 'Save conflict',
+  conflictBody: 'This note was changed while you were editing it.',
+  changedBy: 'Changed by',
+  overwriteMine: 'Overwrite with my version',
+  takeTheirs: 'Take the new version',
+  close: 'Close',
+
+  // Presence
+  editingNow: 'Editing now',
+  viewingNow: 'Viewing',
+
+  // Trash
+  trash: 'Trash',
+  trashEmpty: 'Trash is empty',
+  deletedBy: 'deleted by',
+
   // Help dialog
   helpTitle: 'Syntax reference',
   helpPlaceholder: 'Search the reference… e.g.: bold, table, link',
@@ -117,6 +138,24 @@ const ru: Record<TKey, string> = {
   usernameLabel: 'Имя пользователя',
   passwordLabel: 'Пароль',
   signIn: 'Войти',
+
+  historyBtn: 'История',
+  noHistory: 'Истории пока нет',
+  restoreAction: 'Восстановить',
+  restoreConfirm: 'Восстановить эту версию?',
+  conflictTitle: 'Конфликт сохранения',
+  conflictBody: 'Заметку изменили, пока вы её редактировали.',
+  changedBy: 'Изменил(а)',
+  overwriteMine: 'Перезаписать моей версией',
+  takeTheirs: 'Взять новую версию',
+  close: 'Закрыть',
+
+  editingNow: 'Сейчас редактирует',
+  viewingNow: 'Просматривают',
+
+  trash: 'Корзина',
+  trashEmpty: 'Корзина пуста',
+  deletedBy: 'удалил(а)',
 
   helpTitle: 'Справка по синтаксису',
   helpPlaceholder: 'Поиск по справке… например: выделение жирным, таблица, ссылка',

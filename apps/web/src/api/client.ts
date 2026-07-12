@@ -1,7 +1,9 @@
 import type {
   CreateNoteRequest,
+  DeletedFile,
   Note,
   NoteMeta,
+  Revision,
   SearchResult,
   Settings,
   TreeNode,
@@ -12,6 +14,7 @@ class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public body?: unknown,
   ) {
     super(message)
   }
@@ -29,13 +32,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let message = res.statusText
+    let body: unknown
     try {
-      const body = (await res.json()) as { error?: string }
-      if (body.error) message = body.error
+      body = await res.json()
+      const err = (body as { error?: string }).error
+      if (err) message = err
     } catch {
       /* not JSON */
     }
-    throw new ApiError(res.status, message)
+    throw new ApiError(res.status, message, body)
   }
   return res.json() as Promise<T>
 }
@@ -47,10 +52,27 @@ function encodePath(path: string): string {
 export const api = {
   tree: () => request<TreeNode>('/api/tree'),
   note: (path: string) => request<Note>(`/api/note/${encodePath(path)}`),
-  saveNote: (path: string, content: string) =>
+  saveNote: (path: string, content: string, baseHash?: string) =>
     request<{ status: string }>(`/api/note/${encodePath(path)}`, {
       method: 'PUT',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, baseHash: baseHash ?? '' }),
+    }),
+  history: (path: string, limit = 50) =>
+    request<Revision[]>(`/api/history/${encodePath(path)}?limit=${limit}`),
+  diff: (path: string, from: string, to = '') =>
+    request<{ diff: string }>(
+      `/api/diff/${encodePath(path)}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+  restore: (path: string, rev: string) =>
+    request<{ status: string }>(`/api/restore/${encodePath(path)}`, {
+      method: 'POST',
+      body: JSON.stringify({ rev }),
+    }),
+  trash: () => request<DeletedFile[]>('/api/trash'),
+  trashRestore: (path: string) =>
+    request<{ status: string }>('/api/trash/restore', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
     }),
   createNote: (req: CreateNoteRequest) =>
     request<Note>('/api/note', { method: 'POST', body: JSON.stringify(req) }),

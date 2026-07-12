@@ -18,9 +18,13 @@ type NoteMeta struct {
 type Note struct {
 	NoteMeta
 	Content     string         `json:"content"`
+	ContentHash string         `json:"contentHash"` // sha256 for optimistic locking
 	HTML        string         `json:"html,omitempty"`
 	Frontmatter map[string]any `json:"frontmatter,omitempty"`
 	Backlinks   []Backlink     `json:"backlinks,omitempty"`
+	// Access is the caller's effective access ("read" | "write"),
+	// filled by the API layer.
+	Access string `json:"access,omitempty"`
 }
 
 // Link is an outgoing wiki-link extracted from a note.
@@ -68,4 +72,7 @@ type NoteRules struct {
 	DefaultFolder   string            `yaml:"defaultFolder" json:"defaultFolder"`
 	TypeFolders     map[string]string `yaml:"typeFolders" json:"typeFolders"`
 	AutoFrontmatter bool              `yaml:"autoFrontmatter" json:"autoFrontmatter"`
+	// TrackAuthorship maintains created_by / updated_by frontmatter
+	// fields on notes saved through the platform.
+	TrackAuthorship bool `yaml:"trackAuthorship" json:"trackAuthorship"`
 }

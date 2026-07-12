@@ -11,10 +11,12 @@ const (
 	EventIndexUpdated = "index.updated"
 )
 
-// Event is a domain event. Path is vault-relative.
+// Event is a domain event. Path is vault-relative; Actor is the
+// username that caused the change ("external" for direct fs edits).
 type Event struct {
-	Type string `json:"type"`
-	Path string `json:"path,omitempty"`
+	Type  string `json:"type"`
+	Path  string `json:"path,omitempty"`
+	Actor string `json:"actor,omitempty"`
 }
 
 // Handler receives published events. Handlers must be fast; long work

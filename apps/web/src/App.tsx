@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { NotePage } from './pages/NotePage'
+import { TrashPage } from './pages/TrashPage'
 import { useVaultEvents } from './hooks/useVaultEvents'
 import { useAuthStore } from './store/auth'
 
@@ -18,6 +19,7 @@ export default function App() {
       >
         <Route path="/" element={<HomePage />} />
         <Route path="/n/*" element={<NotePage />} />
+        <Route path="/trash" element={<TrashPage />} />
       </Route>
     </Routes>
   )

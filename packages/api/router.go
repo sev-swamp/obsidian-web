@@ -60,12 +60,17 @@ func (s *Server) Router() *gin.Engine {
 		read.GET("/attachment/*path", s.handleAttachment)
 		read.GET("/settings", s.handleGetSettings)
 		read.GET("/obsidian/plugins", s.handleObsidianPlugins)
+		read.GET("/history/*path", s.handleHistoryLog)
+		read.GET("/diff/*path", s.handleHistoryDiff)
+		read.GET("/trash", s.handleTrash)
 	}
 
 	edit := r.Group("/api", s.requirePermission(auth.PermNotesEdit))
 	{
 		edit.POST("/note", s.handleCreateNote)
 		edit.PUT("/note/*path", s.handleSaveNote)
+		edit.POST("/restore/*path", s.handleRestore)
+		edit.POST("/trash/restore", s.handleTrashRestore)
 	}
 
 	r.DELETE("/api/note/*path", s.requirePermission(auth.PermNotesDelete), s.handleDeleteNote)
@@ -78,7 +83,18 @@ func (s *Server) Router() *gin.Engine {
 		s.Log.Error("plugin init failed", "error", err)
 	}
 
-	r.GET("/ws", func(c *gin.Context) { s.Hub.ServeWS(c.Writer, c.Request) })
+	r.GET("/ws", func(c *gin.Context) {
+		username := ""
+		if s.Auth.Enabled {
+			claims, err := s.Auth.Validate(c.Query("token"))
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+				return
+			}
+			username = claims.Username
+		}
+		s.Hub.ServeWS(c.Writer, c.Request, username)
+	})
 
 	s.mountFrontend(r)
 	return r

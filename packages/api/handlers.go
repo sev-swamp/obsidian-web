@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -19,6 +20,16 @@ func pathParam(c *gin.Context) string {
 	return strings.TrimPrefix(c.Param("path"), "/")
 }
 
+// actor returns the authenticated username ("" when auth is disabled).
+func actor(c *gin.Context) string {
+	if v, ok := c.Get("user"); ok {
+		if claims, ok := v.(*auth.Claims); ok {
+			return claims.Username
+		}
+	}
+	return ""
+}
+
 func limitParam(c *gin.Context, def int) int {
 	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 {
 		return v
@@ -27,7 +38,7 @@ func limitParam(c *gin.Context, def int) int {
 }
 
 func (s *Server) handleListNotes(c *gin.Context) {
-	notes, err := s.Notes.ListNotes()
+	notes, err := s.Notes.ListNotes(nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -36,7 +47,7 @@ func (s *Server) handleListNotes(c *gin.Context) {
 }
 
 func (s *Server) handleGetNote(c *gin.Context) {
-	note, err := s.Notes.GetNote(pathParam(c))
+	note, err := s.Notes.GetNote(pathParam(c), nil)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if os.IsNotExist(err) {
@@ -63,12 +74,12 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	p, err := s.Notes.CreateNote(req)
+	p, err := s.Notes.CreateNote(actor(c), req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	note, err := s.Notes.GetNote(p)
+	note, err := s.Notes.GetNote(p, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -78,13 +89,25 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 
 func (s *Server) handleSaveNote(c *gin.Context) {
 	var req struct {
-		Content string `json:"content"`
+		Content  string `json:"content"`
+		BaseHash string `json:"baseHash"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := s.Notes.SaveNote(pathParam(c), req.Content); err != nil {
+	if err := s.Notes.SaveNote(actor(c), pathParam(c), req.Content, req.BaseHash); err != nil {
+		var conflict *core.ConflictError
+		if errors.As(err, &conflict) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":          "conflict",
+				"currentHash":    conflict.CurrentHash,
+				"currentContent": conflict.CurrentContent,
+				"changedBy":      conflict.ChangedBy,
+				"changedAt":      conflict.ChangedAt,
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -92,7 +115,7 @@ func (s *Server) handleSaveNote(c *gin.Context) {
 }
 
 func (s *Server) handleDeleteNote(c *gin.Context) {
-	if err := s.Notes.DeleteNote(pathParam(c)); err != nil {
+	if err := s.Notes.DeleteNote(actor(c), pathParam(c)); err != nil {
 		status := http.StatusInternalServerError
 		if os.IsNotExist(err) {
 			status = http.StatusNotFound
@@ -114,7 +137,7 @@ func (s *Server) handleTree(c *gin.Context) {
 
 func (s *Server) handleSearch(c *gin.Context) {
 	query := c.Query("q")
-	results := s.Notes.Search(query, limitParam(c, 20))
+	results := s.Notes.Search(query, limitParam(c, 20), nil)
 	if results == nil {
 		results = []core.SearchResult{}
 	}
@@ -122,7 +145,7 @@ func (s *Server) handleSearch(c *gin.Context) {
 }
 
 func (s *Server) handleRecent(c *gin.Context) {
-	notes, err := s.Notes.Recent(limitParam(c, 10))
+	notes, err := s.Notes.Recent(limitParam(c, 10), nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -183,6 +206,93 @@ func (s *Server) handleUpload(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"path": dest})
+}
+
+// --- history & trash ---------------------------------------------------
+
+func (s *Server) historyOr404(c *gin.Context) core.History {
+	h := s.Notes.History()
+	if h == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "history is disabled"})
+		return nil
+	}
+	return h
+}
+
+func (s *Server) handleHistoryLog(c *gin.Context) {
+	h := s.historyOr404(c)
+	if h == nil {
+		return
+	}
+	revs, err := h.Log(core.NormalizeNotePath(pathParam(c)), limitParam(c, 50))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if revs == nil {
+		revs = []core.Revision{}
+	}
+	c.JSON(http.StatusOK, revs)
+}
+
+func (s *Server) handleHistoryDiff(c *gin.Context) {
+	h := s.historyOr404(c)
+	if h == nil {
+		return
+	}
+	from := c.Query("from")
+	if from == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from revision is required"})
+		return
+	}
+	diff, err := h.Diff(core.NormalizeNotePath(pathParam(c)), from, c.Query("to"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"diff": diff})
+}
+
+func (s *Server) handleRestore(c *gin.Context) {
+	var req struct {
+		Rev string `json:"rev"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Rev == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rev is required"})
+		return
+	}
+	if err := s.Notes.RestoreNote(actor(c), pathParam(c), req.Rev); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "restored"})
+}
+
+func (s *Server) handleTrash(c *gin.Context) {
+	deleted, err := s.Notes.Trash(limitParam(c, 100))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if deleted == nil {
+		deleted = []core.DeletedFile{}
+	}
+	c.JSON(http.StatusOK, deleted)
+}
+
+func (s *Server) handleTrashRestore(c *gin.Context) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+	if err := s.Notes.RestoreDeleted(actor(c), req.Path); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "restored"})
 }
 
 // Settings API exposes only the runtime-editable subset (note rules).

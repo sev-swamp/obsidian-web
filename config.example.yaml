@@ -28,6 +28,22 @@ notes:
     project: "Projects"
   # Generate YAML frontmatter automatically for new notes.
   autoFrontmatter: true
+  # Maintain created_by / updated_by frontmatter fields on notes saved
+  # through the platform (recommended for team vaults).
+  trackAuthorship: false
+
+history:
+  # Git-backed change history: per-note revisions, diffs, restore and a
+  # trash for deleted notes. In managed mode a .git repository is
+  # created inside the vault and every change becomes a commit.
+  enabled: true
+  # managed — the platform commits every change;
+  # external — the vault is already a git repo managed elsewhere
+  #            (history is read-only); off — same as enabled: false.
+  mode: managed
+  # Coalesce direct file-system edits (Obsidian, editors) into one
+  # revision per file per interval, seconds.
+  externalDebounceSec: 45
 
 auth:
   # Disabled by default: ideal for a private, local instance.

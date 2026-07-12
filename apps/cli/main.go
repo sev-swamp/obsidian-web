@@ -159,13 +159,13 @@ func runHashPassword() {
 }
 
 func runExport(notes *core.NoteService, outDir string) {
-	metas, err := notes.ListNotes()
+	metas, err := notes.ListNotes(nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 	for _, meta := range metas {
-		note, err := notes.GetNote(meta.Path)
+		note, err := notes.GetNote(meta.Path, nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "skip:", meta.Path, err)
 			continue

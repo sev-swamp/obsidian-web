@@ -1,11 +1,13 @@
 // Package websocket broadcasts core events to connected browser clients
-// so the UI updates in real time without page reloads.
+// so the UI updates in real time, and tracks presence: who is viewing
+// or editing which note.
 package websocket
 
 import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -26,29 +28,55 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// AccessFunc restricts which vault paths a user may learn about through
+// events and presence. nil allows everything.
+type AccessFunc func(username, path string) bool
+
 type client struct {
-	conn *websocket.Conn
-	send chan []byte
+	conn     *websocket.Conn
+	send     chan []byte
+	username string
 }
 
-// Hub fan-outs domain events to all connected WebSocket clients.
+// inbound messages from browsers (presence updates).
+type inbound struct {
+	c   *client
+	msg clientMessage
+}
+
+type clientMessage struct {
+	Type  string `json:"type"`  // "presence"
+	Path  string `json:"path"`
+	State string `json:"state"` // viewing | editing | left
+}
+
+type outbound struct {
+	path string // empty = broadcast to everyone
+	data []byte
+}
+
+// Hub fan-outs domain events and presence to WebSocket clients.
 type Hub struct {
 	log        *slog.Logger
+	access     AccessFunc
 	register   chan *client
 	unregister chan *client
-	broadcast  chan []byte
+	broadcast  chan outbound
+	inbox      chan inbound
 }
 
 // NewHub creates a hub subscribed to the event bus and starts its loop.
-func NewHub(bus core.EventBus, log *slog.Logger) *Hub {
+func NewHub(bus core.EventBus, access AccessFunc, log *slog.Logger) *Hub {
 	if log == nil {
 		log = slog.Default()
 	}
 	h := &Hub{
 		log:        log,
+		access:     access,
 		register:   make(chan *client),
 		unregister: make(chan *client),
-		broadcast:  make(chan []byte, 64),
+		broadcast:  make(chan outbound, 64),
+		inbox:      make(chan inbound, 64),
 	}
 	go h.run()
 	bus.Subscribe(func(e core.Event) {
@@ -57,15 +85,68 @@ func NewHub(bus core.EventBus, log *slog.Logger) *Hub {
 			return
 		}
 		select {
-		case h.broadcast <- data:
+		case h.broadcast <- outbound{path: e.Path, data: data}:
 		default: // drop if the hub is saturated; clients re-sync via REST
 		}
 	})
 	return h
 }
 
+func (h *Hub) allowed(username, path string) bool {
+	if h.access == nil || path == "" {
+		return true
+	}
+	return h.access(username, path)
+}
+
 func (h *Hub) run() {
 	clients := map[*client]bool{}
+	// presence: path -> client -> state ("viewing" | "editing")
+	presence := map[string]map[*client]string{}
+
+	removeFromPresence := func(c *client) []string {
+		var affected []string
+		for path, members := range presence {
+			if _, ok := members[c]; ok {
+				delete(members, c)
+				if len(members) == 0 {
+					delete(presence, path)
+				}
+				affected = append(affected, path)
+			}
+		}
+		return affected
+	}
+
+	notifyPresence := func(path string) {
+		viewers := map[string]bool{}
+		editors := map[string]bool{}
+		for c, state := range presence[path] {
+			if c.username == "" {
+				continue
+			}
+			if state == "editing" {
+				editors[c.username] = true
+			} else {
+				viewers[c.username] = true
+			}
+		}
+		payload, err := json.Marshal(map[string]any{
+			"type":    "presence.changed",
+			"path":    path,
+			"viewers": sortedKeys(viewers),
+			"editors": sortedKeys(editors),
+		})
+		if err != nil {
+			return
+		}
+		for c := range clients {
+			if h.allowed(c.username, path) {
+				h.trySend(clients, c, payload)
+			}
+		}
+	}
+
 	for {
 		select {
 		case c := <-h.register:
@@ -74,28 +155,59 @@ func (h *Hub) run() {
 			if clients[c] {
 				delete(clients, c)
 				close(c.send)
+				for _, path := range removeFromPresence(c) {
+					notifyPresence(path)
+				}
 			}
+		case in := <-h.inbox:
+			if in.msg.Type != "presence" || in.msg.Path == "" {
+				continue
+			}
+			switch in.msg.State {
+			case "viewing", "editing":
+				if presence[in.msg.Path] == nil {
+					presence[in.msg.Path] = map[*client]string{}
+				}
+				presence[in.msg.Path][in.c] = in.msg.State
+			default: // "left"
+				if members, ok := presence[in.msg.Path]; ok {
+					delete(members, in.c)
+					if len(members) == 0 {
+						delete(presence, in.msg.Path)
+					}
+				}
+			}
+			notifyPresence(in.msg.Path)
 		case msg := <-h.broadcast:
 			for c := range clients {
-				select {
-				case c.send <- msg:
-				default: // slow client: disconnect instead of blocking everyone
-					delete(clients, c)
-					close(c.send)
+				if h.allowed(c.username, msg.path) {
+					h.trySend(clients, c, msg.data)
 				}
 			}
 		}
 	}
 }
 
-// ServeWS upgrades an HTTP request to a WebSocket connection.
-func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
+// trySend queues a message, disconnecting slow clients instead of
+// blocking everyone.
+func (h *Hub) trySend(clients map[*client]bool, c *client, data []byte) {
+	select {
+	case c.send <- data:
+	default:
+		delete(clients, c)
+		close(c.send)
+	}
+}
+
+// ServeWS upgrades an HTTP request to a WebSocket connection. username
+// may be empty when authentication is disabled.
+func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, username string) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Warn("websocket upgrade failed", "error", err)
 		return
 	}
-	c := &client{conn: conn, send: make(chan []byte, 16)}
+	c := &client{conn: conn, send: make(chan []byte, 16), username: username}
 	h.register <- c
 	go h.writePump(c)
 	go h.readPump(c)
@@ -112,8 +224,17 @@ func (h *Hub) readPump(c *client) {
 		return c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	})
 	for {
-		if _, _, err := c.conn.ReadMessage(); err != nil {
+		_, data, err := c.conn.ReadMessage()
+		if err != nil {
 			return
+		}
+		var msg clientMessage
+		if json.Unmarshal(data, &msg) != nil {
+			continue
+		}
+		select {
+		case h.inbox <- inbound{c: c, msg: msg}:
+		default: // presence updates are best-effort
 		}
 	}
 }
@@ -142,4 +263,13 @@ func (h *Hub) writePump(c *client) {
 			}
 		}
 	}
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

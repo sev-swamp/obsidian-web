@@ -14,9 +14,33 @@ export interface Backlink {
 
 export interface Note extends NoteMeta {
   content: string
+  contentHash: string
   html?: string
   frontmatter?: Record<string, unknown>
   backlinks?: Backlink[]
+  access?: 'read' | 'write'
+}
+
+export interface Revision {
+  id: string
+  actor: string
+  action: string
+  message: string
+  time: string
+}
+
+export interface DeletedFile {
+  path: string
+  actor: string
+  time: string
+  restoreRev: string
+}
+
+export interface ConflictInfo {
+  currentHash: string
+  currentContent: string
+  changedBy?: string
+  changedAt?: string
 }
 
 export interface TreeNode {
