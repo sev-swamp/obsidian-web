@@ -68,6 +68,10 @@ func (s *Server) Router() *gin.Engine {
 	})
 	r.POST("/api/auth/login", s.handleLogin)
 	r.GET("/api/auth/status", s.handleAuthStatus)
+	r.GET("/api/auth/sso/status", s.handleSSOStatus)
+	r.GET("/api/auth/sso/login", s.handleSSOLogin)
+	r.GET("/api/auth/sso/callback", s.handleSSOCallback)
+	r.GET("/api/auth/me", s.requirePermission(auth.PermNotesRead), s.handleMe)
 
 	read := r.Group("/api", s.requirePermission(auth.PermNotesRead))
 	{
@@ -81,9 +85,14 @@ func (s *Server) Router() *gin.Engine {
 		read.GET("/attachment/*path", s.handleAttachment)
 		read.GET("/settings", s.handleGetSettings)
 		read.GET("/obsidian/plugins", s.handleObsidianPlugins)
-		read.GET("/history/*path", s.handleHistoryLog)
-		read.GET("/diff/*path", s.handleHistoryDiff)
-		read.GET("/trash", s.handleTrash)
+	}
+
+	// History viewing has its own permission (history:read).
+	hist := r.Group("/api", s.requirePermission(auth.PermHistory))
+	{
+		hist.GET("/history/*path", s.handleHistoryLog)
+		hist.GET("/diff/*path", s.handleHistoryDiff)
+		hist.GET("/trash", s.handleTrash)
 	}
 
 	edit := r.Group("/api", s.requirePermission(auth.PermNotesEdit))
@@ -107,6 +116,11 @@ func (s *Server) Router() *gin.Engine {
 		admin.POST("/users/:name/revoke", s.handleAdminRevoke)
 		admin.GET("/acl", s.handleAdminGetACL)
 		admin.PUT("/acl", s.handleAdminPutACL)
+		admin.GET("/groups", s.handleAdminGroups)
+		admin.POST("/groups", s.handleAdminAddGroup)
+		admin.DELETE("/groups/:name", s.handleAdminDeleteGroup)
+		admin.GET("/sso", s.handleAdminGetSSO)
+		admin.PUT("/sso", s.handleAdminPutSSO)
 		admin.GET("/check", s.handleAdminCheck)
 		admin.POST("/reload", s.handleAdminReload)
 	}

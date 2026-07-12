@@ -89,20 +89,36 @@ type Rule struct {
 	Special string  `yaml:"special,omitempty" json:"special,omitempty"` // "owner": Private/<user>/…
 }
 
+// SSOConfig is the OIDC single-sign-on configuration, editable from
+// the settings UI and stored alongside users.
+type SSOConfig struct {
+	Enabled       bool   `yaml:"enabled" json:"enabled"`
+	Name          string `yaml:"name" json:"name"` // button label, e.g. "Keycloak"
+	Issuer        string `yaml:"issuer" json:"issuer"`
+	ClientID      string `yaml:"clientId" json:"clientId"`
+	ClientSecret  string `yaml:"clientSecret" json:"clientSecret,omitempty"`
+	RedirectURL   string `yaml:"redirectUrl" json:"redirectUrl"`
+	DefaultRole   string `yaml:"defaultRole" json:"defaultRole"`
+	AutoProvision bool   `yaml:"autoProvision" json:"autoProvision"`
+}
+
 type fileData struct {
 	Users  []UserRecord `yaml:"users"`
 	Groups []string     `yaml:"groups"`
 	ACL    []Rule       `yaml:"acl"`
+	SSO    *SSOConfig   `yaml:"sso,omitempty"`
 }
 
 // Store holds users, groups and ACL rules backed by users.yaml.
 type Store struct {
 	path string
 
-	mu    sync.RWMutex
-	users map[string]*UserRecord
-	order []string // stable listing order
-	rules []Rule
+	mu     sync.RWMutex
+	users  map[string]*UserRecord
+	order  []string // stable listing order
+	groups []string // explicitly declared groups
+	rules  []Rule
+	sso    SSOConfig
 }
 
 // Load reads users.yaml; a missing file yields an empty store that will
@@ -124,7 +140,9 @@ func (s *Store) Reload() error {
 			s.mu.Lock()
 			s.users = map[string]*UserRecord{}
 			s.order = nil
+			s.groups = nil
 			s.rules = nil
+			s.sso = SSOConfig{}
 			s.mu.Unlock()
 			return nil
 		}
@@ -152,7 +170,13 @@ func (s *Store) Reload() error {
 	s.mu.Lock()
 	s.users = users
 	s.order = order
+	s.groups = data.Groups
 	s.rules = data.ACL
+	if data.SSO != nil {
+		s.sso = *data.SSO
+	} else {
+		s.sso = SSOConfig{}
+	}
 	s.mu.Unlock()
 	return nil
 }
@@ -160,7 +184,11 @@ func (s *Store) Reload() error {
 // Save persists the store atomically (tmp + rename).
 func (s *Store) Save() error {
 	s.mu.RLock()
-	data := fileData{ACL: s.rules}
+	data := fileData{ACL: s.rules, Groups: s.groups}
+	if s.sso != (SSOConfig{}) {
+		sso := s.sso
+		data.SSO = &sso
+	}
 	for _, name := range s.order {
 		data.Users = append(data.Users, *s.users[name])
 	}
@@ -425,11 +453,14 @@ func contains(list []string, v string) bool {
 	return false
 }
 
-// SortedGroupNames lists group names referenced anywhere (for the UI).
+// SortedGroupNames lists group names declared or referenced anywhere.
 func (s *Store) SortedGroupNames() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	set := map[string]bool{}
+	for _, g := range s.groups {
+		set[g] = true
+	}
 	for _, u := range s.users {
 		for _, g := range u.Groups {
 			set[g] = true
@@ -448,4 +479,86 @@ func (s *Store) SortedGroupNames() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// GroupInfo describes a group with its members (for the settings UI).
+type GroupInfo struct {
+	Name    string   `json:"name"`
+	Members []string `json:"members"`
+}
+
+// Groups lists all groups with member usernames.
+func (s *Store) Groups() []GroupInfo {
+	names := s.SortedGroupNames()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]GroupInfo, 0, len(names))
+	for _, name := range names {
+		info := GroupInfo{Name: name, Members: []string{}}
+		for _, uname := range s.order {
+			if contains(s.users[uname].Groups, name) {
+				info.Members = append(info.Members, uname)
+			}
+		}
+		out = append(out, info)
+	}
+	return out
+}
+
+// AddGroup declares a group (persisted even while it has no members).
+func (s *Store) AddGroup(name string) error {
+	if name == "" {
+		return fmt.Errorf("group name is required")
+	}
+	s.mu.Lock()
+	if !contains(s.groups, name) {
+		s.groups = append(s.groups, name)
+		sort.Strings(s.groups)
+	}
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// DeleteGroup removes the group declaration and strips it from users.
+func (s *Store) DeleteGroup(name string) error {
+	s.mu.Lock()
+	for i, g := range s.groups {
+		if g == name {
+			s.groups = append(s.groups[:i], s.groups[i+1:]...)
+			break
+		}
+	}
+	for _, u := range s.users {
+		for i, g := range u.Groups {
+			if g == name {
+				u.Groups = append(u.Groups[:i], u.Groups[i+1:]...)
+				break
+			}
+		}
+	}
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// SSO returns the current single-sign-on configuration.
+func (s *Store) SSO() SSOConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sso
+}
+
+// SetSSO validates and persists the SSO configuration.
+func (s *Store) SetSSO(cfg SSOConfig) error {
+	if cfg.Enabled && (cfg.Issuer == "" || cfg.ClientID == "") {
+		return fmt.Errorf("issuer and clientId are required to enable SSO")
+	}
+	s.mu.Lock()
+	// An empty secret in the update keeps the stored one (the UI never
+	// receives the secret back).
+	if cfg.ClientSecret == "" {
+		cfg.ClientSecret = s.sso.ClientSecret
+	}
+	s.sso = cfg
+	s.mu.Unlock()
+	return s.Save()
 }

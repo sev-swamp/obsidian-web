@@ -319,17 +319,25 @@ func (s *Server) handleHistoryDiff(c *gin.Context) {
 	if h == nil {
 		return
 	}
-	from := c.Query("from")
-	if from == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "from revision is required"})
-		return
-	}
 	diffPath := core.NormalizeNotePath(pathParam(c))
 	if s.aclAccess(c, diffPath) < acl.AccessRead {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	diff, err := h.Diff(diffPath, from, c.Query("to"))
+	// ?rev= shows what that revision changed (diff against its parent);
+	// ?from=&to= compares two arbitrary revisions.
+	var diff string
+	var err error
+	if rev := c.Query("rev"); rev != "" {
+		diff, err = h.ChangesIn(diffPath, rev)
+	} else {
+		from := c.Query("from")
+		if from == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "rev or from revision is required"})
+			return
+		}
+		diff, err = h.Diff(diffPath, from, c.Query("to"))
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

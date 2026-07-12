@@ -4,8 +4,7 @@ import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { NotePage } from './pages/NotePage'
 import { TrashPage } from './pages/TrashPage'
-import { AdminPage } from './pages/AdminPage'
-import { TokensPage } from './pages/TokensPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { useVaultEvents } from './hooks/useVaultEvents'
 import { useAuthStore } from './store/auth'
 
@@ -22,8 +21,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/n/*" element={<NotePage />} />
         <Route path="/trash" element={<TrashPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-        <Route path="/tokens" element={<TokensPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   )

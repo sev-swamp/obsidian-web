@@ -35,6 +35,9 @@ type History interface {
 	// Diff renders a line diff of the file between two revisions;
 	// empty `to` means the current on-disk content.
 	Diff(path, from, to string) (string, error)
+	// ChangesIn renders what the given revision changed in the file
+	// (diff against its parent; the first revision diffs against empty).
+	ChangesIn(path, rev string) (string, error)
 	// Deleted lists files removed from the vault, newest first.
 	Deleted(limit int) ([]DeletedFile, error)
 }

@@ -38,6 +38,7 @@ export function NotePage() {
 
   const canEdit = can('notes:edit') && note?.access !== 'read'
   const canDelete = can('notes:delete') && note?.access !== 'read'
+  const canHistory = can('history:read')
 
   const canonicalPath = note?.path
 
@@ -171,12 +172,14 @@ export function NotePage() {
                   {t('edit')}
                 </button>
               )}
-              <button
-                onClick={() => setHistoryOpen((v) => !v)}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              >
-                {t('historyBtn')}
-              </button>
+              {canHistory && (
+                <button
+                  onClick={() => setHistoryOpen((v) => !v)}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  {t('historyBtn')}
+                </button>
+              )}
               {canDelete && (
                 <button
                   onClick={() => {
@@ -203,7 +206,7 @@ export function NotePage() {
         <MarkdownView html={note.html ?? ''} />
       )}
 
-      {historyOpen && (
+      {historyOpen && canHistory && (
         <HistoryPanel
           path={note.path}
           canEdit={canEdit}

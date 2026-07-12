@@ -59,8 +59,8 @@ func TestTokenCarriesPermissions(t *testing.T) {
 	s := newTestService()
 	cases := map[string][]string{
 		"reader": {PermNotesRead},
-		"writer": {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload},
-		"admin":  {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload, PermSettings},
+		"writer": {PermNotesRead, PermNotesEdit, PermNotesDelete, PermHistory, PermUpload},
+		"admin":  {PermNotesRead, PermNotesEdit, PermNotesDelete, PermHistory, PermUpload, PermSettings},
 	}
 	passwords := map[string]string{"reader": "readerpw", "writer": "s3cret", "admin": "adminpw"}
 	for user, want := range cases {
@@ -84,7 +84,7 @@ func TestTokenCarriesPermissions(t *testing.T) {
 	// Viewer must not gain write permissions.
 	token, _, _ := s.Login("reader", "readerpw")
 	claims, _ := s.Validate(token)
-	for _, p := range []string{PermNotesEdit, PermNotesDelete, PermUpload, PermSettings} {
+	for _, p := range []string{PermNotesEdit, PermNotesDelete, PermHistory, PermUpload, PermSettings} {
 		if claims.HasPermission(p) {
 			t.Errorf("viewer must not have %s", p)
 		}

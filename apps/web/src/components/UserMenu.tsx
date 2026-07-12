@@ -8,22 +8,27 @@ import { useT } from '../i18n'
 const langNames: Record<Lang, string> = { en: 'English', ru: 'Русский' }
 
 // UserMenu sits at the bottom of the sidebar: the current user's name
-// opens an upward dropdown with the language switcher and sign-out.
+// opens an upward dropdown with Settings, a Language submenu (flyout),
+// Trash and Sign out.
 export function UserMenu() {
   const [open, setOpen] = useState(false)
+  const [langOpen, setLangOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const token = useAuthStore((s) => s.token)
   const username = useAuthStore((s) => s.username)
   const role = useAuthStore((s) => s.role)
   const logout = useAuthStore((s) => s.logout)
-  const canEdit = useAuthStore((s) => s.can)('notes:edit')
+  const can = useAuthStore((s) => s.can)
   const { lang, setLang } = useLangStore()
   const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setLangOpen(false)
+      return
+    }
     const onClickOutside = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
@@ -39,68 +44,69 @@ export function UserMenu() {
   }, [open])
 
   const name = username ?? t('guest')
+  const itemCls =
+    'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800'
+  const go = (path: string) => {
+    setOpen(false)
+    navigate(path)
+  }
 
   return (
     <div ref={ref} className="relative border-t border-gray-200 pt-2 dark:border-gray-800">
       {open && (
         <div className="absolute bottom-full left-0 z-30 mb-1 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-          <p className="px-2.5 pt-1 pb-1.5 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-            {t('language')}
-          </p>
-          {(Object.keys(langNames) as Lang[]).map((code) => (
-            <button
-              key={code}
-              onClick={() => {
-                setLang(code)
-                setOpen(false)
-              }}
-              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                lang === code ? 'font-medium text-violet-600 dark:text-violet-400' : ''
-              }`}
-            >
-              {langNames[code]}
-              {lang === code && <span aria-hidden>✓</span>}
+          {can('settings:write') && (
+            <button onClick={() => go('/settings')} className={itemCls}>
+              <span aria-hidden>⚙️</span>
+              {t('settingsTitle')}
             </button>
-          ))}
-          {(canEdit || token) && (
-            <div className="my-1.5 border-t border-gray-100 dark:border-gray-800" />
           )}
-          {canEdit && (
+
+          {/* Language as a submenu with a right-side flyout. */}
+          <div className="relative">
             <button
-              onClick={() => {
-                setOpen(false)
-                navigate('/trash')
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+              onClick={() => setLangOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={langOpen}
+              className={`${itemCls} justify-between`}
             >
+              <span className="flex items-center gap-2">
+                <span aria-hidden>🌐</span>
+                {t('language')}
+              </span>
+              <span className="text-gray-400" aria-hidden>
+                ›
+              </span>
+            </button>
+            {langOpen && (
+              <div className="absolute top-0 left-full z-40 ml-1.5 w-44 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                {(Object.keys(langNames) as Lang[]).map((code) => (
+                  <button
+                    key={code}
+                    onClick={() => {
+                      setLang(code)
+                      setLangOpen(false)
+                      setOpen(false)
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                      lang === code ? 'font-medium text-violet-600 dark:text-violet-400' : ''
+                    }`}
+                  >
+                    {langNames[code]}
+                    {lang === code && <span aria-hidden>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {can('history:read') && (
+            <button onClick={() => go('/trash')} className={itemCls}>
               <span aria-hidden>🗑</span>
               {t('trash')}
             </button>
           )}
-          {token && (
-            <button
-              onClick={() => {
-                setOpen(false)
-                navigate('/tokens')
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              <span aria-hidden>🔑</span>
-              {t('tokensTitle')}
-            </button>
-          )}
-          {role === 'admin' && (
-            <button
-              onClick={() => {
-                setOpen(false)
-                navigate('/admin')
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              <span aria-hidden>⚙️</span>
-              {t('adminTitle')}
-            </button>
-          )}
+
           {token && (
             <>
               <div className="my-1.5 border-t border-gray-100 dark:border-gray-800" />

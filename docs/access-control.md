@@ -62,7 +62,26 @@ permissions may only narrow the role's set. Tokens are listed and
 revoked individually; `GET /api/note/...` etc. accept them like session
 tokens. The token value is shown exactly once and never stored.
 
-## SSO groundwork
+## Groups
 
-`auth.IdentityProvider` is the interface an OAuth/OIDC module
-implements; provider modules are a future, separate deliverable.
+Groups are declared in users.yaml (`groups:` list) or from the Groups
+tab in the settings UI; deleting a group also strips it from every
+user. Membership is edited per user (Users tab).
+
+## SSO (OpenID Connect)
+
+A generic OIDC provider (Google, Keycloak, Authentik, Azure AD…) is
+configured from the SSO tab in the settings UI and stored in
+users.yaml:
+
+- issuer URL, client ID/secret, redirect URL (empty = auto
+  `<host>/api/auth/sso/callback` — register this in the provider);
+- `autoProvision` creates an account on first sign-in with
+  `defaultRole`; provisioned accounts have no password and can sign in
+  only through the provider;
+- the login page shows a "Sign in with <name>" button when enabled.
+
+Flow: `/api/auth/sso/login` → provider → `/api/auth/sso/callback`
+(state-cookie CSRF check, id_token verification) → platform session
+JWT. `auth.IdentityProvider` remains the extension point for
+non-OIDC providers.

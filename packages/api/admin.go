@@ -208,6 +208,86 @@ func (s *Server) handleAdminReload(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "reloaded"})
 }
 
+// --- groups (admin) --------------------------------------------------------
+
+func (s *Server) handleAdminGroups(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"groups": store.Groups()})
+}
+
+func (s *Server) handleAdminAddGroup(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if err := store.AddGroup(req.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"groups": store.Groups()})
+}
+
+func (s *Server) handleAdminDeleteGroup(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	if err := store.DeleteGroup(c.Param("name")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"groups": store.Groups()})
+}
+
+// --- SSO configuration (admin) ---------------------------------------------
+
+func (s *Server) handleAdminGetSSO(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	cfg := store.SSO()
+	// Never expose the secret; report only whether one is set.
+	hasSecret := cfg.ClientSecret != ""
+	cfg.ClientSecret = ""
+	c.JSON(http.StatusOK, gin.H{"sso": cfg, "hasSecret": hasSecret})
+}
+
+func (s *Server) handleAdminPutSSO(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	var req struct {
+		SSO acl.SSOConfig `json:"sso"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.SSO.DefaultRole != "" && !auth.ValidRole(req.SSO.DefaultRole) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown defaultRole (viewer|editor|admin)"})
+		return
+	}
+	if err := store.SetSSO(req.SSO); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	cfg := store.SSO()
+	cfg.ClientSecret = ""
+	c.JSON(http.StatusOK, gin.H{"sso": cfg})
+}
+
 // --- personal API tokens --------------------------------------------------
 
 func claimsOf(c *gin.Context) *auth.Claims {

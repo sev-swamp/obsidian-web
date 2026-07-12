@@ -1,0 +1,655 @@
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api } from '../api/client'
+import type { AclRule, SsoConfig } from '../api/types'
+import { useAuthStore, type Permission } from '../store/auth'
+import { useT, type TKey } from '../i18n'
+
+const inputCls =
+  'w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-gray-700'
+const btnCls =
+  'rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800'
+const primaryBtnCls =
+  'rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50'
+
+type Tab = 'users' | 'groups' | 'access' | 'tokens' | 'sso'
+
+const tabs: { id: Tab; label: TKey }[] = [
+  { id: 'users', label: 'tabUsers' },
+  { id: 'groups', label: 'tabGroups' },
+  { id: 'access', label: 'tabAccess' },
+  { id: 'tokens', label: 'tabTokens' },
+  { id: 'sso', label: 'tabSSO' },
+]
+
+export function SettingsPage() {
+  const [tab, setTab] = useState<Tab>('users')
+  const t = useT()
+
+  return (
+    <div className="mx-auto max-w-4xl px-6 py-10">
+      <h1 className="text-2xl font-bold">⚙️ {t('settingsTitle')}</h1>
+
+      <nav className="mt-6 flex flex-wrap gap-1 border-b border-gray-200 dark:border-gray-800">
+        {tabs.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => setTab(item.id)}
+            className={`rounded-t-lg px-4 py-2 text-sm font-medium ${
+              tab === item.id
+                ? 'border border-b-0 border-gray-200 bg-white text-violet-600 dark:border-gray-800 dark:bg-gray-950 dark:text-violet-400'
+                : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
+            }`}
+          >
+            {t(item.label)}
+          </button>
+        ))}
+      </nav>
+
+      <div className="pt-6">
+        {tab === 'users' && <UsersSection />}
+        {tab === 'groups' && <GroupsSection />}
+        {tab === 'access' && <AccessSection />}
+        {tab === 'tokens' && <TokensSection />}
+        {tab === 'sso' && <SsoSection />}
+      </div>
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* Users                                                              */
+/* ---------------------------------------------------------------- */
+
+function UsersSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+  const { data } = useQuery({ queryKey: ['admin-users'], queryFn: api.adminUsers })
+
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer', groups: '' })
+  const createUser = useMutation({
+    mutationFn: () =>
+      api.adminCreateUser({
+        username: newUser.username,
+        password: newUser.password,
+        role: newUser.role,
+        groups: splitGroups(newUser.groups),
+      }),
+    onSuccess: () => {
+      setNewUser({ username: '', password: '', role: 'viewer', groups: '' })
+      invalidate()
+    },
+  })
+
+  return (
+    <section>
+      <div className="space-y-2">
+        {data?.users.map((u) => (
+          <UserRow key={u.username} user={u} onChanged={invalidate} />
+        ))}
+      </div>
+
+      <form
+        className="mt-4 grid gap-2 rounded-xl border border-dashed border-gray-300 p-4 sm:grid-cols-2 dark:border-gray-700"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (newUser.username && newUser.password) createUser.mutate()
+        }}
+      >
+        <input
+          className={inputCls}
+          placeholder={t('usernameLabel')}
+          value={newUser.username}
+          onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+        />
+        <input
+          className={inputCls}
+          type="password"
+          placeholder={t('passwordLabel')}
+          value={newUser.password}
+          onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+        />
+        <select
+          className={inputCls}
+          value={newUser.role}
+          onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+        >
+          <option value="viewer">viewer</option>
+          <option value="editor">editor</option>
+          <option value="admin">admin</option>
+        </select>
+        <input
+          className={inputCls}
+          placeholder={t('groupsLabel')}
+          value={newUser.groups}
+          onChange={(e) => setNewUser({ ...newUser, groups: e.target.value })}
+        />
+        {createUser.error && (
+          <p className="text-sm text-red-500 sm:col-span-2">
+            {(createUser.error as Error).message}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={!newUser.username || !newUser.password || createUser.isPending}
+          className={`${primaryBtnCls} sm:col-span-2`}
+        >
+          {t('createUser')}
+        </button>
+      </form>
+    </section>
+  )
+}
+
+function UserRow({
+  user,
+  onChanged,
+}: {
+  user: { username: string; role: string; groups: string[] | null }
+  onChanged: () => void
+}) {
+  const t = useT()
+  const [groups, setGroups] = useState((user.groups ?? []).join(', '))
+  const [password, setPassword] = useState('')
+
+  const update = useMutation({
+    mutationFn: (patch: { role?: string; groups?: string[]; password?: string }) =>
+      api.adminUpdateUser(user.username, patch),
+    onSuccess: () => {
+      setPassword('')
+      onChanged()
+    },
+  })
+  const remove = useMutation({
+    mutationFn: () => api.adminDeleteUser(user.username),
+    onSuccess: onChanged,
+  })
+  const revoke = useMutation({
+    mutationFn: () => api.adminRevoke(user.username),
+    onSuccess: onChanged,
+  })
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 dark:border-gray-800">
+      <span className="w-28 truncate font-medium">{user.username}</span>
+      <select
+        value={user.role}
+        onChange={(e) => update.mutate({ role: e.target.value })}
+        className="rounded-lg border border-gray-300 bg-transparent px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-950"
+      >
+        <option value="viewer">viewer</option>
+        <option value="editor">editor</option>
+        <option value="admin">admin</option>
+      </select>
+      <input
+        value={groups}
+        onChange={(e) => setGroups(e.target.value)}
+        onBlur={() => update.mutate({ groups: splitGroups(groups) })}
+        placeholder={t('groupsLabel')}
+        className="min-w-32 flex-1 rounded-lg border border-gray-300 bg-transparent px-2 py-1 text-sm dark:border-gray-700"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        onBlur={() => {
+          if (password) update.mutate({ password })
+        }}
+        placeholder={t('resetPassword')}
+        className="w-44 rounded-lg border border-gray-300 bg-transparent px-2 py-1 text-sm dark:border-gray-700"
+      />
+      <button onClick={() => revoke.mutate()} className={btnCls} title={t('revokeSessions')}>
+        ⛔
+      </button>
+      <button
+        onClick={() => {
+          if (confirm(`${t('deleteUserBtn')} ${user.username}?`)) remove.mutate()
+        }}
+        className={`${btnCls} text-red-600 dark:text-red-400`}
+      >
+        {t('deleteUserBtn')}
+      </button>
+      {(update.error || remove.error) && (
+        <span className="w-full text-xs text-red-500">
+          {((update.error || remove.error) as Error).message}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* Groups                                                             */
+/* ---------------------------------------------------------------- */
+
+function GroupsSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({ queryKey: ['admin-groups'], queryFn: api.adminGroups })
+  const [name, setName] = useState('')
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin-groups'] })
+    void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+  }
+  const add = useMutation({
+    mutationFn: () => api.adminAddGroup(name),
+    onSuccess: () => {
+      setName('')
+      invalidate()
+    },
+  })
+  const del = useMutation({
+    mutationFn: (group: string) => api.adminDeleteGroup(group),
+    onSuccess: invalidate,
+  })
+
+  return (
+    <section>
+      {data?.groups.length === 0 && <p className="text-sm text-gray-400">{t('noGroups')}</p>}
+      <ul className="space-y-2">
+        {data?.groups.map((g) => (
+          <li
+            key={g.name}
+            className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">{g.name}</div>
+              <div className="truncate text-xs text-gray-400">
+                {g.members.length > 0 ? g.members.join(', ') : `0 ${t('membersLabel')}`}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (confirm(`${t('deleteUserBtn')} «${g.name}»?`)) del.mutate(g.name)
+              }}
+              className={`${btnCls} shrink-0 text-red-600 dark:text-red-400`}
+            >
+              {t('deleteUserBtn')}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="mt-4 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (name.trim()) add.mutate()
+        }}
+      >
+        <input
+          className={inputCls}
+          placeholder={t('groupNameLabel')}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button type="submit" disabled={!name.trim() || add.isPending} className={primaryBtnCls}>
+          {t('addGroupBtn')}
+        </button>
+      </form>
+      {add.error && <p className="mt-1 text-sm text-red-500">{(add.error as Error).message}</p>}
+    </section>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* Access rules + checker                                             */
+/* ---------------------------------------------------------------- */
+
+function AccessSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const { data: aclData } = useQuery({ queryKey: ['admin-acl'], queryFn: api.adminGetACL })
+
+  const [rulesText, setRulesText] = useState<string | null>(null)
+  const [aclError, setAclError] = useState('')
+  const rulesValue = rulesText ?? JSON.stringify(aclData?.rules ?? [], null, 2)
+  const saveRules = useMutation({
+    mutationFn: (rules: AclRule[]) => api.adminPutACL(rules),
+    onSuccess: () => {
+      setAclError('')
+      setRulesText(null)
+      void queryClient.invalidateQueries({ queryKey: ['admin-acl'] })
+    },
+    onError: (err) => setAclError((err as Error).message),
+  })
+
+  const [check, setCheck] = useState({ user: '', path: '' })
+  const [checkResult, setCheckResult] = useState('')
+
+  return (
+    <section>
+      <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{t('aclHint')}</p>
+      <textarea
+        value={rulesValue}
+        onChange={(e) => setRulesText(e.target.value)}
+        spellCheck={false}
+        rows={10}
+        className={`${inputCls} font-mono text-xs`}
+      />
+      {aclError && <p className="mt-1 text-sm text-red-500">{aclError}</p>}
+      <button
+        onClick={() => {
+          try {
+            saveRules.mutate(JSON.parse(rulesValue) as AclRule[])
+          } catch (e) {
+            setAclError((e as Error).message)
+          }
+        }}
+        disabled={saveRules.isPending}
+        className={`${primaryBtnCls} mt-2`}
+      >
+        {t('saveRules')}
+      </button>
+
+      <h3 className="mt-8 mb-3 text-sm font-semibold tracking-wide text-gray-400 uppercase">
+        {t('checkSection')}
+      </h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className={`${inputCls} max-w-44`}
+          placeholder={t('usernameLabel')}
+          value={check.user}
+          onChange={(e) => setCheck({ ...check, user: e.target.value })}
+        />
+        <input
+          className={`${inputCls} max-w-72`}
+          placeholder={`${t('pathLabel')} (HR/Salaries.md)`}
+          value={check.path}
+          onChange={(e) => setCheck({ ...check, path: e.target.value })}
+        />
+        <button
+          onClick={() => {
+            void api
+              .adminCheck(check.user, check.path)
+              .then((r) => setCheckResult(r.access))
+              .catch((e: Error) => setCheckResult(e.message))
+          }}
+          disabled={!check.user || !check.path}
+          className={btnCls}
+        >
+          {t('checkBtn')}
+        </button>
+        {checkResult && (
+          <span
+            className={`rounded-full px-3 py-1 text-sm font-medium ${
+              checkResult === 'write'
+                ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300'
+                : checkResult === 'read'
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  : 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+            }`}
+          >
+            {t('accessResult')}: {checkResult}
+          </span>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* API tokens                                                         */
+/* ---------------------------------------------------------------- */
+
+function TokensSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const myPermissions = useAuthStore((s) => s.permissions) ?? []
+
+  const { data: tokens } = useQuery({ queryKey: ['tokens'], queryFn: api.tokens })
+
+  const [name, setName] = useState('')
+  const [ttlDays, setTtlDays] = useState(0)
+  const [perms, setPerms] = useState<Permission[]>([])
+  const [issued, setIssued] = useState('')
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.createToken({
+        name,
+        ttlDays: ttlDays > 0 ? ttlDays : undefined,
+        permissions: perms.length > 0 ? perms : undefined,
+      }),
+    onSuccess: (res) => {
+      setIssued(res.token)
+      setName('')
+      setPerms([])
+      void queryClient.invalidateQueries({ queryKey: ['tokens'] })
+    },
+  })
+
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.revokeToken(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tokens'] }),
+  })
+
+  return (
+    <section>
+      <ul className="space-y-2">
+        {tokens?.map((tok) => (
+          <li
+            key={tok.id}
+            className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">
+                {tok.name}{' '}
+                {tok.revoked && <span className="text-xs text-red-500">({t('revoked')})</span>}
+              </div>
+              <div className="text-xs text-gray-400">
+                {tok.permissions.join(', ')} ·{' '}
+                {tok.expiresAt
+                  ? `${t('expiresLabel')} ${new Date(tok.expiresAt).toLocaleDateString()}`
+                  : t('neverExpires')}
+              </div>
+            </div>
+            {!tok.revoked && (
+              <button
+                onClick={() => revoke.mutate(tok.id)}
+                className="shrink-0 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+              >
+                {t('revokeBtn')}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <form
+        className="mt-6 space-y-3 rounded-xl border border-dashed border-gray-300 p-4 dark:border-gray-700"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (name.trim()) create.mutate()
+        }}
+      >
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('tokenName')}
+          className={inputCls}
+        />
+        <label className="block text-sm text-gray-600 dark:text-gray-400">
+          {t('ttlDaysLabel')}
+          <input
+            type="number"
+            min={0}
+            value={ttlDays}
+            onChange={(e) => setTtlDays(Number(e.target.value))}
+            className="mt-1 w-32 rounded-lg border border-gray-300 bg-transparent px-3 py-1.5 dark:border-gray-700"
+          />
+        </label>
+        <fieldset className="text-sm text-gray-600 dark:text-gray-400">
+          <legend>{t('permissionsLabel')}</legend>
+          <div className="mt-1 flex flex-wrap gap-3">
+            {myPermissions.map((p) => (
+              <label key={p} className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={perms.includes(p)}
+                  onChange={(e) =>
+                    setPerms(e.target.checked ? [...perms, p] : perms.filter((x) => x !== p))
+                  }
+                  className="accent-violet-600"
+                />
+                <code className="text-xs">{p}</code>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {create.error && (
+          <p className="text-sm text-red-500">{(create.error as Error).message}</p>
+        )}
+        <button
+          type="submit"
+          disabled={!name.trim() || create.isPending}
+          className={primaryBtnCls}
+        >
+          {t('createTokenBtn')}
+        </button>
+      </form>
+
+      {issued && (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+          <p className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+            {t('tokenCreatedOnce')}
+          </p>
+          <code className="block overflow-x-auto rounded bg-white p-2 text-xs break-all dark:bg-gray-900">
+            {issued}
+          </code>
+        </div>
+      )}
+    </section>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* SSO                                                                */
+/* ---------------------------------------------------------------- */
+
+function SsoSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({ queryKey: ['admin-sso'], queryFn: api.adminGetSSO })
+
+  const [form, setForm] = useState<SsoConfig | null>(null)
+  const cfg: SsoConfig = form ??
+    data?.sso ?? {
+      enabled: false,
+      name: '',
+      issuer: '',
+      clientId: '',
+      redirectUrl: '',
+      defaultRole: 'viewer',
+      autoProvision: true,
+    }
+
+  const save = useMutation({
+    mutationFn: () => api.adminPutSSO(cfg),
+    onSuccess: () => {
+      setForm(null)
+      void queryClient.invalidateQueries({ queryKey: ['admin-sso'] })
+    },
+  })
+
+  const set = (patch: Partial<SsoConfig>) => setForm({ ...cfg, ...patch })
+
+  return (
+    <section className="max-w-xl space-y-3">
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input
+          type="checkbox"
+          checked={cfg.enabled}
+          onChange={(e) => set({ enabled: e.target.checked })}
+          className="accent-violet-600"
+        />
+        {t('ssoEnabledLabel')}
+      </label>
+
+      <label className="block text-sm text-gray-600 dark:text-gray-400">
+        {t('ssoNameLabel')}
+        <input
+          className={`${inputCls} mt-1`}
+          value={cfg.name}
+          onChange={(e) => set({ name: e.target.value })}
+          placeholder="Keycloak / Google / …"
+        />
+      </label>
+      <label className="block text-sm text-gray-600 dark:text-gray-400">
+        {t('issuerLabel')}
+        <input
+          className={`${inputCls} mt-1`}
+          value={cfg.issuer}
+          onChange={(e) => set({ issuer: e.target.value })}
+          placeholder="https://accounts.google.com"
+        />
+      </label>
+      <label className="block text-sm text-gray-600 dark:text-gray-400">
+        {t('clientIdLabel')}
+        <input
+          className={`${inputCls} mt-1`}
+          value={cfg.clientId}
+          onChange={(e) => set({ clientId: e.target.value })}
+        />
+      </label>
+      <label className="block text-sm text-gray-600 dark:text-gray-400">
+        {t('clientSecretLabel')}
+        {data?.hasSecret && (
+          <span className="ml-1 text-xs text-gray-400">({t('secretKept')})</span>
+        )}
+        <input
+          className={`${inputCls} mt-1`}
+          type="password"
+          value={cfg.clientSecret ?? ''}
+          onChange={(e) => set({ clientSecret: e.target.value })}
+        />
+      </label>
+      <label className="block text-sm text-gray-600 dark:text-gray-400">
+        {t('redirectUrlLabel')}
+        <input
+          className={`${inputCls} mt-1`}
+          value={cfg.redirectUrl}
+          onChange={(e) => set({ redirectUrl: e.target.value })}
+        />
+      </label>
+      <label className="block text-sm text-gray-600 dark:text-gray-400">
+        {t('defaultRoleLabel')}
+        <select
+          className={`${inputCls} mt-1`}
+          value={cfg.defaultRole || 'viewer'}
+          onChange={(e) => set({ defaultRole: e.target.value })}
+        >
+          <option value="viewer">viewer</option>
+          <option value="editor">editor</option>
+          <option value="admin">admin</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+        <input
+          type="checkbox"
+          checked={cfg.autoProvision}
+          onChange={(e) => set({ autoProvision: e.target.checked })}
+          className="accent-violet-600"
+        />
+        {t('autoProvisionLabel')}
+      </label>
+
+      {save.error && <p className="text-sm text-red-500">{(save.error as Error).message}</p>}
+      <button
+        onClick={() => save.mutate()}
+        disabled={save.isPending || form === null}
+        className={primaryBtnCls}
+      >
+        {t('ssoSaveBtn')}
+      </button>
+    </section>
+  )
+}
+
+function splitGroups(s: string): string[] {
+  return s
+    .split(',')
+    .map((g) => g.trim())
+    .filter(Boolean)
+}

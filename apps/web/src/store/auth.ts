@@ -6,6 +6,7 @@ export type Permission =
   | 'notes:read'
   | 'notes:edit'
   | 'notes:delete'
+  | 'history:read'
   | 'files:upload'
   | 'settings:write'
 

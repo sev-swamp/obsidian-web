@@ -98,6 +98,22 @@ export interface AclRule {
   special?: 'owner' | ''
 }
 
+export interface GroupInfo {
+  name: string
+  members: string[]
+}
+
+export interface SsoConfig {
+  enabled: boolean
+  name: string
+  issuer: string
+  clientId: string
+  clientSecret?: string
+  redirectUrl: string
+  defaultRole: string
+  autoProvision: boolean
+}
+
 export interface ApiTokenRecord {
   id: string
   name: string

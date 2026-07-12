@@ -17,8 +17,9 @@ uses the same list to show or hide actions (edit, delete, new note).
 | `notes:read`     | read notes, tree, search, attachments, templates | ✅  | ✅     | ✅    |
 | `notes:edit`     | create and save notes                         | —      | ✅     | ✅    |
 | `notes:delete`   | delete notes                                  | —      | ✅     | ✅    |
+| `history:read`   | view note history, diffs and the trash        | —      | ✅     | ✅    |
 | `files:upload`   | upload attachments                            | —      | ✅     | ✅    |
-| `settings:write` | change platform settings                      | —      | —      | ✅    |
+| `settings:write` | settings UI: users, groups, ACL, SSO          | —      | —      | ✅    |
 
 The mapping lives in `packages/auth` (`rolePermissions`). A response to
 a request lacking a permission is `403 {"error":"missing permission: …"}`.

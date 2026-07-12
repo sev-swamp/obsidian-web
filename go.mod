@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-git/go-git/v5 v5.19.1
@@ -16,6 +17,7 @@ require (
 	go.abhg.dev/goldmark/mermaid v0.6.0
 	go.abhg.dev/goldmark/wikilink v0.6.0
 	golang.org/x/crypto v0.54.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -37,6 +39,7 @@ require (
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.1 // indirect

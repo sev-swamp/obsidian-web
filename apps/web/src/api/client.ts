@@ -2,6 +2,8 @@ import type {
   AclRule,
   AdminUser,
   ApiTokenRecord,
+  GroupInfo,
+  SsoConfig,
   CreateNoteRequest,
   DeletedFile,
   Note,
@@ -27,7 +29,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = useAuthStore.getState().token
   const headers = new Headers(init?.headers)
   headers.set('Content-Type', 'application/json')
-  if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
 
   const res = await fetch(path, { ...init, headers })
   if (res.status === 401) {
@@ -65,6 +69,11 @@ export const api = {
   diff: (path: string, from: string, to = '') =>
     request<{ diff: string }>(
       `/api/diff/${encodePath(path)}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+  // What a single revision changed (diff against its parent).
+  diffRev: (path: string, rev: string) =>
+    request<{ diff: string }>(
+      `/api/diff/${encodePath(path)}?rev=${encodeURIComponent(rev)}`,
     ),
   restore: (path: string, rev: string) =>
     request<{ status: string }>(`/api/restore/${encodePath(path)}`, {
@@ -112,6 +121,27 @@ export const api = {
     request<{ rules: AclRule[] }>('/api/admin/acl', {
       method: 'PUT',
       body: JSON.stringify({ rules }),
+    }),
+  adminGroups: () => request<{ groups: GroupInfo[] }>('/api/admin/groups'),
+  adminAddGroup: (name: string) =>
+    request<{ groups: GroupInfo[] }>('/api/admin/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  adminDeleteGroup: (name: string) =>
+    request<{ groups: GroupInfo[] }>(`/api/admin/groups/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+  adminGetSSO: () => request<{ sso: SsoConfig; hasSecret: boolean }>('/api/admin/sso'),
+  adminPutSSO: (sso: SsoConfig) =>
+    request<{ sso: SsoConfig }>('/api/admin/sso', {
+      method: 'PUT',
+      body: JSON.stringify({ sso }),
+    }),
+  ssoStatus: () => request<{ enabled: boolean; name: string }>('/api/auth/sso/status'),
+  me: (token: string) =>
+    request<{ username: string; role: string; permissions: Permission[] }>('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
     }),
   adminCheck: (user: string, path: string) =>
     request<{ access: string }>(

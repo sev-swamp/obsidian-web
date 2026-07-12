@@ -184,6 +184,39 @@ func (g *Git) Diff(path, from, to string) (string, error) {
 	return lineDiff(string(a), string(b)), nil
 }
 
+// ChangesIn renders what a revision changed in the file: the diff
+// between the parent commit and the revision itself.
+func (g *Git) ChangesIn(path, rev string) (string, error) {
+	commit, err := g.commitAt(rev)
+	if err != nil {
+		return "", err
+	}
+	var after []byte
+	if f, err := commit.File(path); err == nil {
+		content, err := f.Contents()
+		if err != nil {
+			return "", err
+		}
+		after = []byte(content)
+	} // deleted in this revision → empty "after"
+
+	var before []byte
+	if len(commit.ParentHashes) > 0 {
+		parent, err := commit.Parent(0)
+		if err != nil {
+			return "", err
+		}
+		if f, err := parent.File(path); err == nil {
+			content, err := f.Contents()
+			if err != nil {
+				return "", err
+			}
+			before = []byte(content)
+		}
+	}
+	return lineDiff(string(before), string(after)), nil
+}
+
 // Deleted lists files removed through the platform, newest first.
 func (g *Git) Deleted(limit int) ([]core.DeletedFile, error) {
 	iter, err := g.repo.Log(&git.LogOptions{})

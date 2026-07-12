@@ -34,14 +34,15 @@ const (
 	PermNotesRead   = "notes:read"
 	PermNotesEdit   = "notes:edit"
 	PermNotesDelete = "notes:delete"
+	PermHistory     = "history:read"
 	PermUpload      = "files:upload"
 	PermSettings    = "settings:write"
 )
 
 var rolePermissions = map[string][]string{
 	RoleViewer: {PermNotesRead},
-	RoleEditor: {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload},
-	RoleAdmin:  {PermNotesRead, PermNotesEdit, PermNotesDelete, PermUpload, PermSettings},
+	RoleEditor: {PermNotesRead, PermNotesEdit, PermNotesDelete, PermHistory, PermUpload},
+	RoleAdmin:  {PermNotesRead, PermNotesEdit, PermNotesDelete, PermHistory, PermUpload, PermSettings},
 }
 
 // PermissionsForRole returns the permission set granted by a role.

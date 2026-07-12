@@ -23,9 +23,10 @@ export function HistoryPanel({
     queryFn: () => api.history(path),
   })
 
+  // Show what the selected revision changed (diff against its parent).
   const { data: diff } = useQuery({
     queryKey: ['diff', path, selected],
-    queryFn: () => api.diff(path, selected!),
+    queryFn: () => api.diffRev(path, selected!),
     enabled: selected !== null,
   })
 

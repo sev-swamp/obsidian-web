@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
@@ -11,9 +11,31 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const setSession = useAuthStore((s) => s.setSession)
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const t = useT()
 
   const { data: status } = useQuery({ queryKey: ['auth-status'], queryFn: api.authStatus })
+  const { data: sso } = useQuery({ queryKey: ['sso-status'], queryFn: api.ssoStatus })
+
+  // Finish an SSO redirect: the callback hands us a session token.
+  useEffect(() => {
+    const ssoError = searchParams.get('sso_error')
+    if (ssoError) {
+      setError(ssoError)
+      setSearchParams({}, { replace: true })
+      return
+    }
+    const ssoToken = searchParams.get('sso_token')
+    if (!ssoToken) return
+    setSearchParams({}, { replace: true })
+    void api
+      .me(ssoToken)
+      .then((me) => {
+        setSession(ssoToken, me.username, me.role, me.permissions ?? [])
+        navigate('/')
+      })
+      .catch((err: Error) => setError(err.message))
+  }, [searchParams, setSearchParams, setSession, navigate])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -66,6 +88,22 @@ export function LoginPage() {
         >
           {t('signIn')}
         </button>
+
+        {sso?.enabled && (
+          <>
+            <div className="my-4 flex items-center gap-3 text-xs text-gray-400">
+              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+              ·
+              <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+            </div>
+            <a
+              href="/api/auth/sso/login"
+              className="block w-full rounded-lg border border-gray-300 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              🔐 {t('ssoLoginWith')} {sso.name}
+            </a>
+          </>
+        )}
       </form>
     </div>
   )
