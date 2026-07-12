@@ -106,6 +106,7 @@ examples/vault/  demo vault used by the quick start
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Note syntax reference](docs/syntax.md) (also in-app via the **?** button)
 - [REST API & WebSocket reference](docs/api.md)
 - [Plugin SDK guide](docs/plugin-sdk.md)
 - [Deployment guide](docs/deployment.md)

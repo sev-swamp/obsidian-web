@@ -5,6 +5,7 @@ import { FileTree } from './FileTree'
 import { RecentList } from './RecentList'
 import { SearchDialog } from './SearchDialog'
 import { NewNoteDialog } from './NewNoteDialog'
+import { HelpDialog } from './HelpDialog'
 import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 
@@ -12,6 +13,7 @@ export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [newNoteOpen, setNewNoteOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const { theme, toggle } = useThemeStore()
   const token = useAuthStore((s) => s.token)
   const username = useAuthStore((s) => s.username)
@@ -69,6 +71,14 @@ export function Layout() {
           </button>
         )}
         <button
+          onClick={() => setHelpOpen(true)}
+          title="Справка по синтаксису"
+          aria-label="Справка по синтаксису"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 text-sm font-semibold text-gray-500 hover:border-violet-500 hover:text-violet-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
+        >
+          ?
+        </button>
+        <button
           onClick={toggle}
           className="rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800"
           aria-label="Toggle theme"
@@ -109,6 +119,7 @@ export function Layout() {
 
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
       <NewNoteDialog open={newNoteOpen} onClose={() => setNewNoteOpen(false)} />
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }

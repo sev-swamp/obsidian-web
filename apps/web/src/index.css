@@ -8,6 +8,17 @@ body,
   height: 100%;
 }
 
+/* Search-hit highlighting inside the help dialog. */
+mark {
+  background: #fde68a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.dark mark {
+  background: #a16207;
+}
+
 /* ------------------------------------------------------------------ */
 /* Rendered markdown                                                    */
 /* ------------------------------------------------------------------ */
