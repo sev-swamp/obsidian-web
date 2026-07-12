@@ -1,19 +1,21 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { useT } from '../i18n'
 
 export function RecentList({ onNavigate }: { onNavigate: () => void }) {
   const { data: recent } = useQuery({
     queryKey: ['recent'],
     queryFn: () => api.recent(8),
   })
+  const t = useT()
 
   if (!recent?.length) return null
 
   return (
     <section className="mt-6">
       <h2 className="mb-1 px-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-        Recent changes
+        {t('recentChanges')}
       </h2>
       {recent.map((note) => (
         <Link

@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { useT } from '../i18n'
 
 export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState('')
   const navigate = useNavigate()
+  const t = useT()
 
   const { data: results } = useQuery({
     queryKey: ['search', query],
@@ -42,7 +44,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search notes… (supports tag:x and path:x)"
+          placeholder={t('searchPlaceholder')}
           className="w-full border-b border-gray-200 bg-transparent px-4 py-3 outline-none dark:border-gray-700"
         />
         <ul className="max-h-96 overflow-y-auto p-2">
@@ -65,7 +67,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
             </li>
           ))}
           {query.trim() && results?.length === 0 && (
-            <li className="px-3 py-4 text-center text-sm text-gray-400">No results</li>
+            <li className="px-3 py-4 text-center text-sm text-gray-400">{t('noResults')}</li>
           )}
         </ul>
       </div>

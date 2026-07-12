@@ -1,24 +1,26 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { useT } from '../i18n'
 
 export function HomePage() {
   const { data: recent } = useQuery({ queryKey: ['recent'], queryFn: () => api.recent(12) })
+  const t = useT()
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <h1 className="text-3xl font-bold">
-        Welcome to <span className="text-violet-600 dark:text-violet-400">Obsidian Web</span>
+        {t('welcomeTo')} <span className="text-violet-600 dark:text-violet-400">Obsidian Web</span>
       </h1>
       <p className="mt-2 text-gray-500 dark:text-gray-400">
-        Your vault, in the browser. Pick a note from the sidebar or search with{' '}
+        {t('tagline')}{' '}
         <kbd className="rounded bg-gray-100 px-1.5 text-sm dark:bg-gray-800">⌘K</kbd>.
       </p>
 
       {recent && recent.length > 0 && (
         <section className="mt-10">
           <h2 className="mb-3 text-sm font-semibold tracking-wide text-gray-400 uppercase">
-            Recently updated
+            {t('recentlyUpdated')}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {recent.map((note) => (

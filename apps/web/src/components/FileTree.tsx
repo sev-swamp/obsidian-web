@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { TreeNode } from '../api/types'
+import { useT } from '../i18n'
 
 function notePathToUrl(path: string): string {
   const clean = path.replace(/\.md$/i, '')
@@ -63,14 +64,15 @@ function TreeEntry({
 
 export function FileTree({ onNavigate }: { onNavigate: () => void }) {
   const { data: tree, isLoading, error } = useQuery({ queryKey: ['tree'], queryFn: api.tree })
+  const t = useT()
 
-  if (isLoading) return <p className="px-2 text-sm text-gray-400">Loading vault…</p>
-  if (error) return <p className="px-2 text-sm text-red-500">Failed to load tree</p>
+  if (isLoading) return <p className="px-2 text-sm text-gray-400">{t('loadingVault')}</p>
+  if (error) return <p className="px-2 text-sm text-red-500">{t('treeError')}</p>
 
   return (
-    <nav aria-label="Vault files">
+    <nav aria-label={t('files')}>
       <h2 className="mb-1 px-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-        Files
+        {t('files')}
       </h2>
       {tree?.children?.map((child) => (
         <TreeEntry key={child.path} node={child} depth={0} onNavigate={onNavigate} />

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
+import { useT } from '../i18n'
 
 export function LoginPage() {
   const [username, setUsername] = useState('')
@@ -10,6 +11,7 @@ export function LoginPage() {
   const [error, setError] = useState('')
   const setSession = useAuthStore((s) => s.setSession)
   const navigate = useNavigate()
+  const t = useT()
 
   const { data: status } = useQuery({ queryKey: ['auth-status'], queryFn: api.authStatus })
 
@@ -40,7 +42,7 @@ export function LoginPage() {
           <span className="text-violet-600 dark:text-violet-400">◈</span> Obsidian Web
         </h1>
         <label className="block text-sm text-gray-700 dark:text-gray-300">
-          Username
+          {t('usernameLabel')}
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -49,7 +51,7 @@ export function LoginPage() {
           />
         </label>
         <label className="block text-sm text-gray-700 dark:text-gray-300">
-          Password
+          {t('passwordLabel')}
           <input
             type="password"
             value={password}
@@ -62,7 +64,7 @@ export function LoginPage() {
           type="submit"
           className="mt-6 w-full rounded-lg bg-violet-600 py-2 font-medium text-white hover:bg-violet-700"
         >
-          Sign in
+          {t('signIn')}
         </button>
       </form>
     </div>

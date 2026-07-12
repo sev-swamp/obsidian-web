@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import { Breadcrumbs } from '../components/Breadcrumbs'
 import { MarkdownView } from '../components/MarkdownView'
 import { useAuthStore } from '../store/auth'
+import { useT } from '../i18n'
 
 export function NotePage() {
   const params = useParams()
@@ -17,6 +18,7 @@ export function NotePage() {
   const can = useAuthStore((s) => s.can)
   const canEdit = can('notes:edit')
   const canDelete = can('notes:delete')
+  const t = useT()
 
   const {
     data: note,
@@ -51,15 +53,15 @@ export function NotePage() {
 
   if (!notePath) return null
   if (isLoading) {
-    return <div className="p-8 text-gray-400">Loading…</div>
+    return <div className="p-8 text-gray-400">{t('loading')}</div>
   }
   if (error || !note) {
     return (
       <div className="mx-auto max-w-3xl p-8">
         <Breadcrumbs path={notePath} />
-        <h1 className="text-xl font-semibold">Note not found</h1>
+        <h1 className="text-xl font-semibold">{t('noteNotFound')}</h1>
         <p className="mt-2 text-gray-500">
-          “{notePath}” does not exist yet.
+          “{notePath}” {t('notExistYet')}
         </p>
       </div>
     )
@@ -93,13 +95,13 @@ export function NotePage() {
                 disabled={save.isPending}
                 className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
               >
-                Save
+                {t('save')}
               </button>
               <button
                 onClick={() => setEditing(false)}
                 className="rounded-lg px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
               >
-                Cancel
+                {t('cancel')}
               </button>
             </>
           ) : (
@@ -112,17 +114,17 @@ export function NotePage() {
                   }}
                   className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
                 >
-                  Edit
+                  {t('edit')}
                 </button>
               )}
               {canDelete && (
                 <button
                   onClick={() => {
-                    if (confirm(`Delete "${note.title}"?`)) remove.mutate()
+                    if (confirm(`${t('deleteConfirm')} "${note.title}"?`)) remove.mutate()
                   }}
                   className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
                 >
-                  Delete
+                  {t('delete')}
                 </button>
               )}
             </>
@@ -144,7 +146,7 @@ export function NotePage() {
       {!editing && note.backlinks && note.backlinks.length > 0 && (
         <footer className="mt-12 border-t border-gray-200 pt-4 dark:border-gray-800">
           <h2 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-            Linked mentions
+            {t('linkedMentions')}
           </h2>
           <ul className="space-y-1">
             {note.backlinks.map((bl) => (

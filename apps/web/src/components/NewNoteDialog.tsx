@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { TreeNode } from '../api/types'
+import { useT } from '../i18n'
 
 function collectFolders(node: TreeNode | undefined, acc: string[] = []): string[] {
   if (!node) return acc
@@ -21,6 +22,7 @@ export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [template, setTemplate] = useState('')
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const t = useT()
 
   const { data: tree } = useQuery({ queryKey: ['tree'], queryFn: api.tree, enabled: open })
   const { data: templates } = useQuery({
@@ -55,7 +57,7 @@ export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () =>
         className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-semibold">New note</h2>
+        <h2 className="mb-4 text-lg font-semibold">{t('newNoteTitle')}</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -64,24 +66,24 @@ export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () =>
           className="space-y-3"
         >
           <label className="block text-sm">
-            Title
+            {t('titleLabel')}
             <input
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 dark:border-gray-700"
-              placeholder="My new note"
+              placeholder={t('titlePlaceholder')}
             />
           </label>
           <label className="block text-sm">
-            Folder
+            {t('folderLabel')}
             <select
               value={folder}
               onChange={(e) => setFolder(e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
             >
               <option value="">
-                Default ({settings?.notes.defaultFolder || 'vault root'})
+                {t('defaultFolder')} ({settings?.notes.defaultFolder || t('vaultRoot')})
               </option>
               {folders.map((f) => (
                 <option key={f} value={f}>
@@ -91,13 +93,13 @@ export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () =>
             </select>
           </label>
           <label className="block text-sm">
-            Template
+            {t('templateLabel')}
             <select
               value={template}
               onChange={(e) => setTemplate(e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
             >
-              <option value="">None</option>
+              <option value="">{t('none')}</option>
               {templates?.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -114,14 +116,14 @@ export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () =>
               onClick={onClose}
               className="rounded-lg px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              Cancel
+              {t('cancel')}
             </button>
             <button
               type="submit"
               disabled={!title.trim() || create.isPending}
               className="rounded-lg bg-violet-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
             >
-              Create
+              {t('create')}
             </button>
           </div>
         </form>
