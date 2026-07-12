@@ -87,6 +87,36 @@ const en = {
   helpPlaceholder: 'Search the reference… e.g.: bold, table, link',
   helpNothingFound: 'Nothing found for',
   helpClose: 'Close reference',
+
+  // Admin
+  adminTitle: 'Administration',
+  usersSection: 'Users',
+  roleLabel: 'Role',
+  groupsLabel: 'Groups (comma-separated)',
+  createUser: 'Create user',
+  deleteUserBtn: 'Delete',
+  revokeSessions: 'Revoke sessions',
+  resetPassword: 'New password (leave empty to keep)',
+  aclSection: 'Folder access rules (ACL)',
+  aclHint:
+    'JSON list of rules, evaluated top-down — the first matching glob decides. Example: [{"path":"HR/**","allow":[{"group":"hr","access":"write"}],"default":"none"}]. Unmatched paths are unrestricted; the global role remains the ceiling.',
+  saveRules: 'Save rules',
+  checkSection: 'Check access',
+  pathLabel: 'Path',
+  checkBtn: 'Check',
+  accessResult: 'Access',
+
+  // API tokens
+  tokensTitle: 'API tokens',
+  tokenName: 'Token name',
+  ttlDaysLabel: 'Lifetime, days (0 = no expiry)',
+  permissionsLabel: 'Permissions',
+  createTokenBtn: 'Create token',
+  tokenCreatedOnce: 'Copy the token now — it is shown only once:',
+  revokeBtn: 'Revoke',
+  revoked: 'revoked',
+  neverExpires: 'no expiry',
+  expiresLabel: 'expires',
 }
 
 const ru: Record<TKey, string> = {
@@ -161,6 +191,34 @@ const ru: Record<TKey, string> = {
   helpPlaceholder: 'Поиск по справке… например: выделение жирным, таблица, ссылка',
   helpNothingFound: 'Ничего не найдено по запросу',
   helpClose: 'Закрыть справку',
+
+  adminTitle: 'Администрирование',
+  usersSection: 'Пользователи',
+  roleLabel: 'Роль',
+  groupsLabel: 'Группы (через запятую)',
+  createUser: 'Создать пользователя',
+  deleteUserBtn: 'Удалить',
+  revokeSessions: 'Отозвать сессии',
+  resetPassword: 'Новый пароль (пусто — не менять)',
+  aclSection: 'Правила доступа к папкам (ACL)',
+  aclHint:
+    'JSON-список правил, проверяются сверху вниз — решает первый совпавший glob. Пример: [{"path":"HR/**","allow":[{"group":"hr","access":"write"}],"default":"none"}]. Пути без правила не ограничены; глобальная роль остаётся потолком.',
+  saveRules: 'Сохранить правила',
+  checkSection: 'Проверить доступ',
+  pathLabel: 'Путь',
+  checkBtn: 'Проверить',
+  accessResult: 'Доступ',
+
+  tokensTitle: 'API-токены',
+  tokenName: 'Название токена',
+  ttlDaysLabel: 'Срок жизни, дней (0 — бессрочный)',
+  permissionsLabel: 'Разрешения',
+  createTokenBtn: 'Создать токен',
+  tokenCreatedOnce: 'Скопируйте токен сейчас — он показывается только один раз:',
+  revokeBtn: 'Отозвать',
+  revoked: 'отозван',
+  neverExpires: 'бессрочный',
+  expiresLabel: 'истекает',
 }
 
 export type TKey = keyof typeof en

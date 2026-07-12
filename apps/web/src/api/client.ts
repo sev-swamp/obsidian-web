@@ -1,4 +1,7 @@
 import type {
+  AclRule,
+  AdminUser,
+  ApiTokenRecord,
   CreateNoteRequest,
   DeletedFile,
   Note,
@@ -84,6 +87,45 @@ export const api = {
   templates: () => request<string[]>('/api/templates'),
   settings: () => request<Settings>('/api/settings'),
   authStatus: () => request<{ authEnabled: boolean }>('/api/auth/status'),
+  // Admin: user & ACL management
+  adminUsers: () => request<{ users: AdminUser[]; groups: string[] }>('/api/admin/users'),
+  adminCreateUser: (user: { username: string; password: string; role: string; groups: string[] }) =>
+    request<AdminUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(user) }),
+  adminUpdateUser: (
+    name: string,
+    patch: { role?: string; groups?: string[]; password?: string },
+  ) =>
+    request<AdminUser>(`/api/admin/users/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  adminDeleteUser: (name: string) =>
+    request<{ status: string }>(`/api/admin/users/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+  adminRevoke: (name: string) =>
+    request<{ tokenVersion: number }>(`/api/admin/users/${encodeURIComponent(name)}/revoke`, {
+      method: 'POST',
+    }),
+  adminGetACL: () => request<{ rules: AclRule[] }>('/api/admin/acl'),
+  adminPutACL: (rules: AclRule[]) =>
+    request<{ rules: AclRule[] }>('/api/admin/acl', {
+      method: 'PUT',
+      body: JSON.stringify({ rules }),
+    }),
+  adminCheck: (user: string, path: string) =>
+    request<{ access: string }>(
+      `/api/admin/check?user=${encodeURIComponent(user)}&path=${encodeURIComponent(path)}`,
+    ),
+  // Personal API tokens
+  tokens: () => request<ApiTokenRecord[]>('/api/tokens'),
+  createToken: (body: { name: string; ttlDays?: number; permissions?: string[] }) =>
+    request<{ token: string; record: ApiTokenRecord }>('/api/tokens', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  revokeToken: (id: string) =>
+    request<{ status: string }>(`/api/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   login: (username: string, password: string) =>
     request<{
       token: string

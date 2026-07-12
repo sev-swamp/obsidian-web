@@ -78,6 +78,35 @@ export interface CreateNoteRequest {
   content?: string
 }
 
+export interface AdminUser {
+  username: string
+  role: string
+  groups: string[] | null
+  tokenVersion: number
+}
+
+export interface AclGrant {
+  user?: string
+  group?: string
+  access: 'read' | 'write'
+}
+
+export interface AclRule {
+  path: string
+  allow?: AclGrant[]
+  default?: 'none' | 'read' | 'write' | ''
+  special?: 'owner' | ''
+}
+
+export interface ApiTokenRecord {
+  id: string
+  name: string
+  permissions: string[]
+  createdAt: string
+  expiresAt?: string
+  revoked: boolean
+}
+
 export interface VaultEvent {
   type:
     | 'file.created'

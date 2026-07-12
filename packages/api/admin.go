@@ -1,0 +1,332 @@
+package api
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/obsidianweb/obsidianweb/packages/acl"
+	"github.com/obsidianweb/obsidianweb/packages/auth"
+)
+
+// aclOr503 guards admin endpoints that need the users.yaml store.
+func (s *Server) aclOr503(c *gin.Context) *acl.Store {
+	if s.ACL == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "user store is not configured"})
+		return nil
+	}
+	return s.ACL
+}
+
+// --- user management (admin) -------------------------------------------
+
+func (s *Server) handleAdminListUsers(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"users": store.Users(), "groups": store.SortedGroupNames()})
+}
+
+type adminUserRequest struct {
+	Username string   `json:"username"`
+	Password string   `json:"password"`
+	Role     string   `json:"role"`
+	Groups   []string `json:"groups"`
+}
+
+func (s *Server) handleAdminCreateUser(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	var req adminUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Username == "" || req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password are required"})
+		return
+	}
+	if req.Role == "" {
+		req.Role = auth.RoleViewer
+	}
+	if !auth.ValidRole(req.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown role (viewer|editor|admin)"})
+		return
+	}
+	if _, exists := store.User(req.Username); exists {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user already exists"})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	rec := acl.UserRecord{Username: req.Username, PasswordHash: string(hash), Role: req.Role, Groups: req.Groups}
+	if err := store.UpsertUser(rec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, rec)
+}
+
+func (s *Server) handleAdminUpdateUser(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	name := c.Param("name")
+	rec, ok := store.User(name)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	var req adminUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Role != "" {
+		if !auth.ValidRole(req.Role) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown role (viewer|editor|admin)"})
+			return
+		}
+		rec.Role = req.Role
+	}
+	if req.Groups != nil {
+		rec.Groups = req.Groups
+	}
+	if req.Password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		rec.PasswordHash = string(hash)
+		rec.Password = ""
+	}
+	if err := store.UpsertUser(rec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rec)
+}
+
+func (s *Server) handleAdminDeleteUser(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	name := c.Param("name")
+	if name == actor(c) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete yourself"})
+		return
+	}
+	if err := store.DeleteUser(name); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+}
+
+// handleAdminRevoke bumps the token version: every session and API
+// token of the user becomes invalid immediately.
+func (s *Server) handleAdminRevoke(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	v, err := store.BumpTokenVersion(c.Param("name"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tokenVersion": v})
+}
+
+// --- ACL rules (admin) ---------------------------------------------------
+
+func (s *Server) handleAdminGetACL(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"rules": store.Rules()})
+}
+
+func (s *Server) handleAdminPutACL(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	var req struct {
+		Rules []acl.Rule `json:"rules"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := store.SetRules(req.Rules); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"rules": store.Rules()})
+}
+
+// handleAdminCheck computes the effective access of a user to a path —
+// the admin's rule-debugging tool.
+func (s *Server) handleAdminCheck(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	username := c.Query("user")
+	path := c.Query("path")
+	if username == "" || path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user and path query parameters are required"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"user":   username,
+		"path":   path,
+		"access": store.Access(username, path).String(),
+	})
+}
+
+func (s *Server) handleAdminReload(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	if err := store.Reload(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "reloaded"})
+}
+
+// --- personal API tokens --------------------------------------------------
+
+func claimsOf(c *gin.Context) *auth.Claims {
+	if v, ok := c.Get("user"); ok {
+		if claims, ok := v.(*auth.Claims); ok {
+			return claims
+		}
+	}
+	return nil
+}
+
+func (s *Server) handleListTokens(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	rec, ok := store.User(actor(c))
+	if !ok {
+		c.JSON(http.StatusOK, []acl.TokenRecord{})
+		return
+	}
+	if rec.Tokens == nil {
+		rec.Tokens = []acl.TokenRecord{}
+	}
+	c.JSON(http.StatusOK, rec.Tokens)
+}
+
+func (s *Server) handleCreateToken(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	claims := claimsOf(c)
+	if claims == nil || claims.Kind == auth.KindAPI {
+		c.JSON(http.StatusForbidden, gin.H{"error": "API tokens cannot mint tokens"})
+		return
+	}
+	rec, ok := store.User(claims.Username)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "API tokens are available only for users from the user store"})
+		return
+	}
+	var req struct {
+		Name        string   `json:"name"`
+		TTLDays     int      `json:"ttlDays"`
+		Permissions []string `json:"permissions"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	// Requested permissions may only narrow the user's role permissions.
+	rolePerms := auth.PermissionsForRole(rec.Role)
+	perms := req.Permissions
+	if len(perms) == 0 {
+		perms = rolePerms
+	} else {
+		for _, p := range perms {
+			if !containsString(rolePerms, p) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "permission exceeds your role: " + p})
+				return
+			}
+		}
+	}
+
+	jtiBytes := make([]byte, 16)
+	if _, err := rand.Read(jtiBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	jti := hex.EncodeToString(jtiBytes)
+
+	var ttl time.Duration
+	var expiresAt *time.Time
+	if req.TTLDays > 0 {
+		ttl = time.Duration(req.TTLDays) * 24 * time.Hour
+		t := time.Now().Add(ttl)
+		expiresAt = &t
+	}
+
+	user := auth.User{Username: rec.Username, Role: rec.Role}
+	token, _, err := s.Auth.IssueAPIToken(user, rec.TokenVersion, jti, perms, ttl)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	record := acl.TokenRecord{
+		ID:          jti,
+		Name:        req.Name,
+		Permissions: perms,
+		CreatedAt:   time.Now(),
+		ExpiresAt:   expiresAt,
+	}
+	if err := store.AddToken(rec.Username, record); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// The token itself is shown exactly once and never stored.
+	c.JSON(http.StatusCreated, gin.H{"token": token, "record": record})
+}
+
+func (s *Server) handleRevokeToken(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	if err := store.RevokeToken(actor(c), c.Param("id")); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
+}
+
+func containsString(list []string, v string) bool {
+	for _, item := range list {
+		if item == v {
+			return true
+		}
+	}
+	return false
+}

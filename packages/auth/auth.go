@@ -63,11 +63,22 @@ type User struct {
 	Role         string
 }
 
+// Token kinds.
+const (
+	KindSession = ""    // interactive login
+	KindAPI     = "api" // personal API token
+)
+
 // Claims are the JWT claims issued by the service.
 type Claims struct {
 	Username    string   `json:"username"`
 	Role        string   `json:"role"`
 	Permissions []string `json:"permissions,omitempty"`
+	// TokenVersion must match the user's current version; bumping the
+	// version revokes every outstanding token at once.
+	TokenVersion int `json:"tv,omitempty"`
+	// Kind distinguishes sessions from personal API tokens.
+	Kind string `json:"knd,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -108,34 +119,78 @@ func NewService(enabled bool, secret string, ttl time.Duration, users []User) *S
 	return &Service{Enabled: enabled, secret: []byte(secret), ttl: ttl, users: m}
 }
 
-// Login verifies credentials and returns a signed JWT.
+// StaticUser looks up an account configured in config.yaml (the
+// emergency admin and legacy auth.users entries).
+func (s *Service) StaticUser(username string) (User, bool) {
+	u, ok := s.users[username]
+	return u, ok
+}
+
+// Authenticate verifies a password against a user record.
+func Authenticate(u User, password string) error {
+	switch {
+	case u.PasswordHash != "":
+		if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+			return ErrInvalidCredentials
+		}
+	case u.Password != "":
+		if u.Password != password {
+			return ErrInvalidCredentials
+		}
+	default:
+		return ErrInvalidCredentials
+	}
+	return nil
+}
+
+// Login verifies credentials of a statically configured user and
+// returns a signed session JWT.
 func (s *Service) Login(username, password string) (string, *Claims, error) {
 	u, ok := s.users[username]
 	if !ok {
 		return "", nil, ErrInvalidCredentials
 	}
-	switch {
-	case u.PasswordHash != "":
-		if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
-			return "", nil, ErrInvalidCredentials
-		}
-	case u.Password != "":
-		if u.Password != password {
-			return "", nil, ErrInvalidCredentials
-		}
-	default:
-		return "", nil, ErrInvalidCredentials
+	if err := Authenticate(u, password); err != nil {
+		return "", nil, err
 	}
+	return s.IssueSession(u, 0)
+}
 
+// IssueSession signs a session token for an already authenticated user.
+func (s *Service) IssueSession(u User, tokenVersion int) (string, *Claims, error) {
+	role := u.Role
+	if role == "" {
+		role = RoleViewer
+	}
+	return s.issue(&Claims{
+		Username:     u.Username,
+		Role:         role,
+		Permissions:  PermissionsForRole(role),
+		TokenVersion: tokenVersion,
+	}, s.ttl)
+}
+
+// IssueAPIToken signs a personal API token. permissions must already be
+// narrowed to a subset of the user's role permissions; ttl <= 0 means
+// no expiry.
+func (s *Service) IssueAPIToken(u User, tokenVersion int, jti string, permissions []string, ttl time.Duration) (string, *Claims, error) {
 	claims := &Claims{
-		Username:    u.Username,
-		Role:        u.Role,
-		Permissions: PermissionsForRole(u.Role),
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.ttl)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Subject:   u.Username,
-		},
+		Username:     u.Username,
+		Role:         u.Role,
+		Permissions:  permissions,
+		TokenVersion: tokenVersion,
+		Kind:         KindAPI,
+	}
+	claims.ID = jti
+	return s.issue(claims, ttl)
+}
+
+func (s *Service) issue(claims *Claims, ttl time.Duration) (string, *Claims, error) {
+	now := time.Now()
+	claims.IssuedAt = jwt.NewNumericDate(now)
+	claims.Subject = claims.Username
+	if ttl > 0 {
+		claims.ExpiresAt = jwt.NewNumericDate(now.Add(ttl))
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
 	if err != nil {

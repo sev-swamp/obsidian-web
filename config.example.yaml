@@ -67,6 +67,10 @@ auth:
   #  - username: "guest"
   #    passwordHash: "$2a$10$…"
   #    role: "viewer"
+  # Hot-reloadable store for team accounts, groups and folder ACL rules,
+  # managed through the admin UI (/admin) without restarts. Must point
+  # to a writable location (in Docker: /data/users.yaml).
+  usersFile: "users.yaml"
 
 web:
   # Serve the frontend from a directory instead of the embedded build

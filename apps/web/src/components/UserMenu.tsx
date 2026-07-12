@@ -62,20 +62,44 @@ export function UserMenu() {
               {lang === code && <span aria-hidden>✓</span>}
             </button>
           ))}
+          {(canEdit || token) && (
+            <div className="my-1.5 border-t border-gray-100 dark:border-gray-800" />
+          )}
           {canEdit && (
-            <>
-              <div className="my-1.5 border-t border-gray-100 dark:border-gray-800" />
-              <button
-                onClick={() => {
-                  setOpen(false)
-                  navigate('/trash')
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <span aria-hidden>🗑</span>
-                {t('trash')}
-              </button>
-            </>
+            <button
+              onClick={() => {
+                setOpen(false)
+                navigate('/trash')
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <span aria-hidden>🗑</span>
+              {t('trash')}
+            </button>
+          )}
+          {token && (
+            <button
+              onClick={() => {
+                setOpen(false)
+                navigate('/tokens')
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <span aria-hidden>🔑</span>
+              {t('tokensTitle')}
+            </button>
+          )}
+          {role === 'admin' && (
+            <button
+              onClick={() => {
+                setOpen(false)
+                navigate('/admin')
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <span aria-hidden>⚙️</span>
+              {t('adminTitle')}
+            </button>
           )}
           {token && (
             <>

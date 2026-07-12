@@ -8,6 +8,8 @@ apps/web/dist/*
 
 # Local configuration and data
 config.yaml
+users.yaml
+data/
 export/
 
 # OS / editor

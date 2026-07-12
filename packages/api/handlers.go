@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/obsidianweb/obsidianweb/packages/acl"
 	"github.com/obsidianweb/obsidianweb/packages/auth"
 	"github.com/obsidianweb/obsidianweb/packages/core"
 )
@@ -38,7 +39,7 @@ func limitParam(c *gin.Context, def int) int {
 }
 
 func (s *Server) handleListNotes(c *gin.Context) {
-	notes, err := s.Notes.ListNotes(nil)
+	notes, err := s.Notes.ListNotes(s.allowRead(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -47,7 +48,13 @@ func (s *Server) handleListNotes(c *gin.Context) {
 }
 
 func (s *Server) handleGetNote(c *gin.Context) {
-	note, err := s.Notes.GetNote(pathParam(c), nil)
+	p := core.NormalizeNotePath(pathParam(c))
+	access := s.aclAccess(c, p)
+	if access < acl.AccessRead {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	note, err := s.Notes.GetNote(p, s.allowRead(c))
 	if err != nil {
 		status := http.StatusInternalServerError
 		if os.IsNotExist(err) {
@@ -56,11 +63,21 @@ func (s *Server) handleGetNote(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	if access >= acl.AccessWrite {
+		note.Access = "write"
+	} else {
+		note.Access = "read"
+	}
 	c.JSON(http.StatusOK, note)
 }
 
 func (s *Server) handleRawNote(c *gin.Context) {
-	data, err := s.Vault.Read(core.NormalizeNotePath(pathParam(c)))
+	p := core.NormalizeNotePath(pathParam(c))
+	if s.aclAccess(c, p) < acl.AccessRead {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	data, err := s.Vault.Read(p)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -72,6 +89,19 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 	var req core.CreateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// ACL: check the destination folder before the note is created.
+	rules := s.Notes.Rules()
+	folder := strings.Trim(req.Folder, "/")
+	if folder == "" && req.Type != "" {
+		folder = rules.TypeFolders[req.Type]
+	}
+	if folder == "" {
+		folder = rules.DefaultFolder
+	}
+	if s.aclAccess(c, path.Join(folder, "__probe__.md")) < acl.AccessWrite {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no write access to folder " + folder})
 		return
 	}
 	p, err := s.Notes.CreateNote(actor(c), req)
@@ -96,6 +126,14 @@ func (s *Server) handleSaveNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	switch s.aclAccess(c, core.NormalizeNotePath(pathParam(c))) {
+	case acl.AccessNone:
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	case acl.AccessRead:
+		c.JSON(http.StatusForbidden, gin.H{"error": "read-only access"})
+		return
+	}
 	if err := s.Notes.SaveNote(actor(c), pathParam(c), req.Content, req.BaseHash); err != nil {
 		var conflict *core.ConflictError
 		if errors.As(err, &conflict) {
@@ -115,6 +153,14 @@ func (s *Server) handleSaveNote(c *gin.Context) {
 }
 
 func (s *Server) handleDeleteNote(c *gin.Context) {
+	switch s.aclAccess(c, core.NormalizeNotePath(pathParam(c))) {
+	case acl.AccessNone:
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	case acl.AccessRead:
+		c.JSON(http.StatusForbidden, gin.H{"error": "read-only access"})
+		return
+	}
 	if err := s.Notes.DeleteNote(actor(c), pathParam(c)); err != nil {
 		status := http.StatusInternalServerError
 		if os.IsNotExist(err) {
@@ -132,12 +178,32 @@ func (s *Server) handleTree(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if allow := s.allowRead(c); allow != nil {
+		tree = filterTree(tree, allow)
+	}
 	c.JSON(http.StatusOK, tree)
+}
+
+// filterTree hides paths the caller may not read. A directory is shown
+// when it keeps visible children or its probe child is readable.
+func filterTree(node *core.TreeNode, allow core.AllowFunc) *core.TreeNode {
+	out := &core.TreeNode{Name: node.Name, Path: node.Path, IsDir: node.IsDir}
+	for _, child := range node.Children {
+		if child.IsDir {
+			filtered := filterTree(child, allow)
+			if len(filtered.Children) > 0 || allow(child.Path+"/__probe__.md") {
+				out.Children = append(out.Children, filtered)
+			}
+		} else if allow(child.Path) {
+			out.Children = append(out.Children, child)
+		}
+	}
+	return out
 }
 
 func (s *Server) handleSearch(c *gin.Context) {
 	query := c.Query("q")
-	results := s.Notes.Search(query, limitParam(c, 20), nil)
+	results := s.Notes.Search(query, limitParam(c, 20), s.allowRead(c))
 	if results == nil {
 		results = []core.SearchResult{}
 	}
@@ -145,7 +211,7 @@ func (s *Server) handleSearch(c *gin.Context) {
 }
 
 func (s *Server) handleRecent(c *gin.Context) {
-	notes, err := s.Notes.Recent(limitParam(c, 10), nil)
+	notes, err := s.Notes.Recent(limitParam(c, 10), s.allowRead(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -168,6 +234,10 @@ func (s *Server) handleTemplates(c *gin.Context) {
 // handleAttachment streams a vault file (image, PDF, audio, video) with
 // range-request support so media seeking works.
 func (s *Server) handleAttachment(c *gin.Context) {
+	if s.aclAccess(c, pathParam(c)) < acl.AccessRead {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
 	abs, err := s.Vault.AbsPath(pathParam(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -201,6 +271,10 @@ func (s *Server) handleUpload(c *gin.Context) {
 		return
 	}
 	dest := path.Join(folder, path.Base(file.Filename))
+	if s.aclAccess(c, dest) < acl.AccessWrite {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no write access to folder " + folder})
+		return
+	}
 	if err := s.Vault.Write(dest, data); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -224,7 +298,12 @@ func (s *Server) handleHistoryLog(c *gin.Context) {
 	if h == nil {
 		return
 	}
-	revs, err := h.Log(core.NormalizeNotePath(pathParam(c)), limitParam(c, 50))
+	p := core.NormalizeNotePath(pathParam(c))
+	if s.aclAccess(c, p) < acl.AccessRead {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	revs, err := h.Log(p, limitParam(c, 50))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -245,7 +324,12 @@ func (s *Server) handleHistoryDiff(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "from revision is required"})
 		return
 	}
-	diff, err := h.Diff(core.NormalizeNotePath(pathParam(c)), from, c.Query("to"))
+	diffPath := core.NormalizeNotePath(pathParam(c))
+	if s.aclAccess(c, diffPath) < acl.AccessRead {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	diff, err := h.Diff(diffPath, from, c.Query("to"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -261,6 +345,10 @@ func (s *Server) handleRestore(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rev is required"})
 		return
 	}
+	if s.aclAccess(c, core.NormalizeNotePath(pathParam(c))) < acl.AccessWrite {
+		c.JSON(http.StatusForbidden, gin.H{"error": "read-only access"})
+		return
+	}
 	if err := s.Notes.RestoreNote(actor(c), pathParam(c), req.Rev); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -274,6 +362,15 @@ func (s *Server) handleTrash(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if allow := s.allowRead(c); allow != nil {
+		filtered := deleted[:0]
+		for _, d := range deleted {
+			if allow(d.Path) {
+				filtered = append(filtered, d)
+			}
+		}
+		deleted = filtered
+	}
 	if deleted == nil {
 		deleted = []core.DeletedFile{}
 	}
@@ -286,6 +383,10 @@ func (s *Server) handleTrashRestore(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Path == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+	if s.aclAccess(c, req.Path) < acl.AccessWrite {
+		c.JSON(http.StatusForbidden, gin.H{"error": "read-only access"})
 		return
 	}
 	if err := s.Notes.RestoreDeleted(actor(c), req.Path); err != nil {
@@ -335,12 +436,39 @@ func (s *Server) handleLogin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	token, claims, err := s.Auth.Login(req.Username, req.Password)
-	if err != nil {
-		if err == auth.ErrInvalidCredentials {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-			return
+
+	// users.yaml accounts take priority; config.yaml stays the
+	// emergency fallback (see plans/02-access-control.md).
+	var user auth.User
+	tokenVersion := 0
+	found := false
+	if s.ACL != nil {
+		if rec, ok := s.ACL.User(req.Username); ok {
+			role := rec.Role
+			if role == "" {
+				role = auth.RoleViewer
+			}
+			user = auth.User{Username: rec.Username, Password: rec.Password, PasswordHash: rec.PasswordHash, Role: role}
+			tokenVersion = rec.TokenVersion
+			found = true
 		}
+	}
+	if !found {
+		if su, ok := s.Auth.StaticUser(req.Username); ok {
+			user = su
+			found = true
+		}
+	}
+	if !found {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+	if err := auth.Authenticate(user, req.Password); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+		return
+	}
+	token, claims, err := s.Auth.IssueSession(user, tokenVersion)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

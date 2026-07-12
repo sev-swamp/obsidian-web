@@ -8,6 +8,9 @@ services:
       - ./examples/vault:/vault
       # External configuration file.
       - ./config:/config:ro
+      # Writable data: users.yaml (accounts, groups, ACL). Set
+      # auth.usersFile: /data/users.yaml in config.yaml.
+      - ./data:/data
     environment:
       - OBSIDIANWEB_VAULT=/vault
       # - OBSIDIANWEB_JWT_SECRET=change-me

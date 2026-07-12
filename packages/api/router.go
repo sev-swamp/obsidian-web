@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/obsidianweb/obsidianweb/packages/acl"
 	"github.com/obsidianweb/obsidianweb/packages/auth"
 	"github.com/obsidianweb/obsidianweb/packages/core"
 	"github.com/obsidianweb/obsidianweb/packages/obsidian"
@@ -25,12 +26,32 @@ type Server struct {
 	Vault    core.VaultFS
 	Config   *settings.Config
 	Auth     *auth.Service
+	ACL      *acl.Store
 	Hub      *websocket.Hub
 	Plugins  *plugins.Manager
 	Obsidian *obsidian.Compat
 	// WebFS is the embedded (or on-disk) frontend; nil means API-only.
 	WebFS fs.FS
 	Log   *slog.Logger
+}
+
+// aclAccess resolves the caller's folder-level access to a vault path.
+// ACL applies only when authentication identifies users.
+func (s *Server) aclAccess(c *gin.Context, path string) acl.Access {
+	if s.ACL == nil || !s.Auth.Enabled {
+		return acl.AccessWrite
+	}
+	return s.ACL.Access(actor(c), path)
+}
+
+// allowRead returns a predicate filtering search results, backlinks,
+// listings and the tree down to what the caller may read.
+func (s *Server) allowRead(c *gin.Context) core.AllowFunc {
+	if s.ACL == nil || !s.Auth.Enabled {
+		return nil
+	}
+	username := actor(c)
+	return s.ACL.AllowRead(username)
 }
 
 // Router builds the gin engine with all routes attached.
@@ -76,6 +97,26 @@ func (s *Server) Router() *gin.Engine {
 	r.DELETE("/api/note/*path", s.requirePermission(auth.PermNotesDelete), s.handleDeleteNote)
 	r.POST("/api/upload", s.requirePermission(auth.PermUpload), s.handleUpload)
 	r.PUT("/api/settings", s.requirePermission(auth.PermSettings), s.handlePutSettings)
+
+	admin := r.Group("/api/admin", s.requirePermission(auth.PermSettings))
+	{
+		admin.GET("/users", s.handleAdminListUsers)
+		admin.POST("/users", s.handleAdminCreateUser)
+		admin.PUT("/users/:name", s.handleAdminUpdateUser)
+		admin.DELETE("/users/:name", s.handleAdminDeleteUser)
+		admin.POST("/users/:name/revoke", s.handleAdminRevoke)
+		admin.GET("/acl", s.handleAdminGetACL)
+		admin.PUT("/acl", s.handleAdminPutACL)
+		admin.GET("/check", s.handleAdminCheck)
+		admin.POST("/reload", s.handleAdminReload)
+	}
+
+	tokens := r.Group("/api/tokens", s.requirePermission(auth.PermNotesRead))
+	{
+		tokens.GET("", s.handleListTokens)
+		tokens.POST("", s.handleCreateToken)
+		tokens.DELETE("/:id", s.handleRevokeToken)
+	}
 
 	// Plugin routes live under /api/plugins/<id>/ (read access).
 	pluginGroup := r.Group("/api/plugins", s.requirePermission(auth.PermNotesRead))
@@ -174,6 +215,23 @@ func (s *Server) requirePermission(perm string) gin.HandlerFunc {
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
+		}
+		// Store-managed users: enforce instant revocation and API-token
+		// registry checks.
+		if s.ACL != nil {
+			if u, ok := s.ACL.User(claims.Username); ok {
+				if claims.TokenVersion != u.TokenVersion {
+					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session revoked"})
+					return
+				}
+				if claims.Kind == auth.KindAPI && !s.ACL.TokenValid(claims.Username, claims.ID) {
+					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token revoked"})
+					return
+				}
+			} else if claims.Kind == auth.KindAPI {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token revoked"})
+				return
+			}
 		}
 		if !claims.HasPermission(perm) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "missing permission: " + perm})

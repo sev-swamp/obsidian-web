@@ -45,6 +45,9 @@ type AuthConfig struct {
 	// Users are additional accounts beside the admin. Role defaults to
 	// "viewer" when omitted.
 	Users []UserConfig `yaml:"users"`
+	// UsersFile is the hot-reloadable store for team accounts, groups
+	// and folder ACL rules, managed through the admin API/UI.
+	UsersFile string `yaml:"usersFile"`
 }
 
 type AdminConfig struct {
@@ -97,6 +100,7 @@ func Default() *Config {
 		Auth: AuthConfig{
 			TokenTTLHours: 24,
 			Admin:         AdminConfig{Username: "admin"},
+			UsersFile:     "users.yaml",
 		},
 		History: HistoryConfig{
 			Enabled:             true,

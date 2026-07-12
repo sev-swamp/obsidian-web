@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/obsidianweb/obsidianweb/apps/web"
+	"github.com/obsidianweb/obsidianweb/packages/acl"
 	"github.com/obsidianweb/obsidianweb/packages/api"
 	"github.com/obsidianweb/obsidianweb/packages/auth"
 	"github.com/obsidianweb/obsidianweb/packages/core"
@@ -86,7 +87,19 @@ func run(configPath, vaultOverride string) error {
 	authService := auth.NewService(cfg.Auth.Enabled, cfg.Auth.JWTSecret,
 		time.Duration(cfg.Auth.TokenTTLHours)*time.Hour, users)
 
-	hub := websocket.NewHub(bus, nil, log)
+	// Team accounts, groups and folder ACL (hot-reloadable users.yaml).
+	aclStore, err := acl.Load(cfg.Auth.UsersFile)
+	if err != nil {
+		return fmt.Errorf("users file: %w", err)
+	}
+
+	var wsAccess websocket.AccessFunc
+	if cfg.Auth.Enabled {
+		wsAccess = func(username, path string) bool {
+			return aclStore.Access(username, path) >= acl.AccessRead
+		}
+	}
+	hub := websocket.NewHub(bus, wsAccess, log)
 
 	pluginManager := plugins.NewManager(bus, notes, vault, log)
 	pluginManager.Register(&builtin.StatsPlugin{})
@@ -109,6 +122,7 @@ func run(configPath, vaultOverride string) error {
 		Vault:    vault,
 		Config:   cfg,
 		Auth:     authService,
+		ACL:      aclStore,
 		Hub:      hub,
 		Plugins:  pluginManager,
 		Obsidian: obsidian.New(vault.Root()),
