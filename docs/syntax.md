@@ -56,13 +56,40 @@ Frontmatter `aliases` make a note reachable under other names.
 > plain quote
 
 > [!note] Title
-> Callout body
+> Callout body — can span
+> multiple lines.
 ```
 
-Callout types: `note`/`info` (blue), `tip`/`success`/`done` (green),
-`warning`/`caution` (yellow), `danger`/`error`/`bug` (red),
-`question`/`help` (orange), `example` (purple), `quote`, `abstract`,
-`todo`.
+The type goes in `[!brackets]`; the title after it is optional (the
+capitalized type name is used when omitted).
+
+| Color     | Types                                          | Example                  |
+| --------- | ---------------------------------------------- | ------------------------ |
+| 🔵 blue   | `note`, `info`, `todo`                         | `> [!note] Heads up`     |
+| 🟢 green  | `tip`, `hint`, `success`, `check`, `done`      | `> [!done] Shipped`      |
+| 🟡 yellow | `warning`, `caution`, `attention`              | `> [!warning] Careful`   |
+| 🔴 red    | `danger`, `error`, `bug`, `fail`, `failure`    | `> [!bug] Known issue`   |
+| 🟠 orange | `question`, `help`, `faq`                      | `> [!question] Why?`     |
+| 🟣 purple | `example`                                      | `> [!example] Sample`    |
+| ⚪ gray   | `quote`, `cite`                                | `> [!quote] — Author`    |
+| 🩵 cyan   | `abstract`, `summary`, `tldr`                  | `> [!tldr] In short`     |
+
+Unknown types still render as callouts with the default (blue) color:
+
+```
+> [!my-type] Custom block
+```
+
+### Adding a custom callout color
+
+Colors are plain CSS in
+[apps/web/src/index.css](../apps/web/src/index.css): each type sets the
+`--callout-color` variable. To give `[!my-type]` its own color, add one
+rule and rebuild the frontend:
+
+```css
+.markdown blockquote.callout-my-type { --callout-color: #e11d48; }
+```
 
 ## Tables
 

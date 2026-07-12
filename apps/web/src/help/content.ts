@@ -72,15 +72,44 @@ export const helpSections: HelpSection[] = [
   },
   {
     id: 'quotes',
-    title: 'Цитаты и Callouts',
-    keywords: 'quote blockquote цитата callout заметка предупреждение важно note tip warning danger info example',
+    title: 'Цитаты',
+    keywords: 'quote blockquote цитата',
+    entries: [{ code: '> Обычная цитата', text: 'Блок цитаты' }],
+  },
+  {
+    id: 'callouts',
+    title: 'Callouts (цветные блоки)',
+    keywords:
+      'callout цветной блок цвет синий зелёный жёлтый красный оранжевый фиолетовый серый голубой note info todo tip hint success check done warning caution attention danger error bug fail failure question help faq example quote cite abstract summary tldr выполнено готово совет предупреждение опасность вопрос пример',
     entries: [
-      { code: '> Обычная цитата', text: 'Блок цитаты' },
-      { code: '> [!note] Заголовок\n> Текст заметки', text: 'Callout-блок «заметка» (синий)' },
-      { code: '> [!tip] Совет', text: 'Callout «совет» (зелёный). Также: success, done' },
-      { code: '> [!warning] Внимание', text: 'Callout «предупреждение» (жёлтый). Также: caution' },
-      { code: '> [!danger] Опасность', text: 'Callout «ошибка» (красный). Также: error, bug' },
-      { code: '> [!question] Вопрос', text: 'Callout «вопрос» (оранжевый). Также: example, quote, abstract, todo' },
+      {
+        code: '> [!note] Заголовок\n> Текст блока.\n> Может быть многострочным.',
+        text: 'Общий вид: тип в [!скобках], после него — свой заголовок (не обязателен). Заголовок и цвет подставляются по типу',
+      },
+      { code: '> [!note] / [!info] / [!todo]', text: '🔵 Синий — заметка, информация, план' },
+      {
+        code: '> [!tip] / [!hint] / [!success] / [!check] / [!done]',
+        text: '🟢 Зелёный — совет, успех, выполнено. Пример:\n> [!done] Shipped',
+      },
+      {
+        code: '> [!warning] / [!caution] / [!attention]',
+        text: '🟡 Жёлтый — предупреждение, осторожно',
+      },
+      {
+        code: '> [!danger] / [!error] / [!bug] / [!fail] / [!failure]',
+        text: '🔴 Красный — опасность, ошибка, баг',
+      },
+      { code: '> [!question] / [!help] / [!faq]', text: '🟠 Оранжевый — вопрос, помощь' },
+      { code: '> [!example]', text: '🟣 Фиолетовый — пример' },
+      { code: '> [!quote] / [!cite]', text: '⚪ Серый — цитата с указанием источника' },
+      {
+        code: '> [!abstract] / [!summary] / [!tldr]',
+        text: '🩵 Голубой — краткое содержание, выжимка',
+      },
+      {
+        code: '> [!мой-тип] Свой блок',
+        text: 'Неизвестный тип тоже работает — рендерится синим (цветом по умолчанию). Свой цвет добавляется одной CSS-строкой, см. docs/syntax.md',
+      },
     ],
   },
   {
