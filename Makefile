@@ -25,6 +25,10 @@ run:
 dev:
 	cd apps/web && npm run dev
 
+## Deploy to the VPS (set OBSIDIANWEB_DEPLOY_HOST=user@host).
+deploy:
+	scripts/deploy.sh
+
 test:
 	go test ./...
 
