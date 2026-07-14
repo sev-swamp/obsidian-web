@@ -100,6 +100,39 @@ func TestDeleteAndRestoreFromTrash(t *testing.T) {
 	}
 }
 
+func TestCreateFolder(t *testing.T) {
+	svc := newService(t, core.NoteRules{}, false)
+
+	p, err := svc.CreateFolder("igor", "/Projects/2026/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != "Projects/2026" {
+		t.Errorf("path = %q, want Projects/2026", p)
+	}
+
+	tree, err := svc.Tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var findDir func(n *core.TreeNode, path string) bool
+	findDir = func(n *core.TreeNode, path string) bool {
+		for _, c := range n.Children {
+			if c.IsDir && (c.Path == path || findDir(c, path)) {
+				return true
+			}
+		}
+		return false
+	}
+	if !findDir(tree, "Projects/2026") {
+		t.Error("created folder missing from tree")
+	}
+
+	if _, err := svc.CreateFolder("igor", ""); err == nil {
+		t.Error("empty folder path should error")
+	}
+}
+
 func TestAuthorshipFrontmatter(t *testing.T) {
 	svc := newService(t, core.NoteRules{AutoFrontmatter: true, TrackAuthorship: true}, false)
 

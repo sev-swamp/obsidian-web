@@ -272,6 +272,21 @@ func (s *NoteService) CreateNote(actor string, req CreateNoteRequest) (string, e
 	return p, nil
 }
 
+// CreateFolder creates an (empty) directory in the vault. The path is
+// cleaned and must stay inside the vault; creating an existing folder is
+// a no-op (MkdirAll).
+func (s *NoteService) CreateFolder(actor, p string) (string, error) {
+	p = strings.TrimPrefix(path.Clean("/"+strings.Trim(p, "/")), "/")
+	if p == "" || p == "." {
+		return "", fmt.Errorf("folder path is required")
+	}
+	if err := s.fs.Mkdir(p); err != nil {
+		return "", err
+	}
+	s.bus.Publish(Event{Type: EventTreeChanged, Actor: actor})
+	return p, nil
+}
+
 // DeleteNote removes a note from the vault and all indexes. With
 // history enabled the note stays restorable from the trash.
 func (s *NoteService) DeleteNote(actor, p string) error {

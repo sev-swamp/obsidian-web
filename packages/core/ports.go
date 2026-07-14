@@ -17,6 +17,8 @@ type VaultFS interface {
 	Read(path string) ([]byte, error)
 	Write(path string, data []byte) error
 	Delete(path string) error
+	// Mkdir creates a directory (and any missing parents) in the vault.
+	Mkdir(path string) error
 	List(dir string) ([]FileInfo, error)
 	Stat(path string) (FileInfo, error)
 	Exists(path string) bool

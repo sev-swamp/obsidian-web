@@ -79,6 +79,14 @@ func (v *Vault) Write(path string, data []byte) error {
 	return os.WriteFile(abs, data, 0o644)
 }
 
+func (v *Vault) Mkdir(path string) error {
+	abs, err := v.AbsPath(path)
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(abs, 0o755)
+}
+
 func (v *Vault) Delete(path string) error {
 	abs, err := v.AbsPath(path)
 	if err != nil {

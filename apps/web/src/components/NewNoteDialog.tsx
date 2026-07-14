@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -16,7 +16,15 @@ function collectFolders(node: TreeNode | undefined, acc: string[] = []): string[
   return acc
 }
 
-export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function NewNoteDialog({
+  open,
+  onClose,
+  initialFolder = '',
+}: {
+  open: boolean
+  onClose: () => void
+  initialFolder?: string
+}) {
   const [title, setTitle] = useState('')
   const [folder, setFolder] = useState('')
   const [template, setTemplate] = useState('')
@@ -37,6 +45,11 @@ export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () =>
   })
 
   const folders = useMemo(() => collectFolders(tree), [tree])
+
+  // Preselect the folder the dialog was opened for (e.g. from the tree).
+  useEffect(() => {
+    if (open) setFolder(initialFolder)
+  }, [open, initialFolder])
 
   const create = useMutation({
     mutationFn: () => api.createNote({ title, folder, template: template || undefined }),
@@ -77,20 +90,18 @@ export function NewNoteDialog({ open, onClose }: { open: boolean; onClose: () =>
           </label>
           <label className="block text-sm">
             {t('folderLabel')}
-            <select
+            <input
               value={folder}
               onChange={(e) => setFolder(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-            >
-              <option value="">
-                {t('defaultFolder')} ({settings?.notes.defaultFolder || t('vaultRoot')})
-              </option>
+              list="new-note-folders"
+              placeholder={`${t('folderPlaceholder')} (${settings?.notes.defaultFolder || t('vaultRoot')})`}
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 dark:border-gray-700"
+            />
+            <datalist id="new-note-folders">
               {folders.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
+                <option key={f} value={f} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label className="block text-sm">
             {t('templateLabel')}

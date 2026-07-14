@@ -87,6 +87,7 @@ func (s *Server) Router() *gin.Engine {
 		read.GET("/settings", s.handleGetSettings)
 		read.GET("/obsidian/plugins", s.handleObsidianPlugins)
 		read.GET("/plugins", s.handleListPlugins)
+		read.GET("/access/*path", s.handleAccess)
 	}
 
 	// History viewing has its own permission (history:read).
@@ -113,6 +114,7 @@ func (s *Server) Router() *gin.Engine {
 	edit := r.Group("/api", s.requirePermission(auth.PermNotesEdit))
 	{
 		edit.POST("/note", s.handleCreateNote)
+		edit.POST("/folder", s.handleCreateFolder)
 		edit.PUT("/note/*path", s.handleSaveNote)
 		edit.POST("/restore/*path", s.handleRestore)
 		edit.POST("/trash/restore", s.handleTrashRestore)

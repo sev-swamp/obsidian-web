@@ -91,11 +91,42 @@ export function NotePage() {
     },
   })
 
+  // When a note doesn't exist (e.g. following a broken wiki-link), find out
+  // whether the current user may create it in the target folder.
+  const notFound = error instanceof ApiError && error.status === 404
+  const { data: accessInfo, isLoading: accessLoading } = useQuery({
+    queryKey: ['access', notePath],
+    queryFn: () => api.access(notePath),
+    enabled: notFound && can('notes:edit'),
+  })
+
+  const targetFolder = (() => {
+    const clean = notePath.replace(/\.md$/i, '')
+    const slash = clean.lastIndexOf('/')
+    return slash >= 0 ? clean.slice(0, slash) : ''
+  })()
+
+  const createMissing = useMutation({
+    mutationFn: () => {
+      const clean = notePath.replace(/\.md$/i, '')
+      const slash = clean.lastIndexOf('/')
+      const title = slash >= 0 ? clean.slice(slash + 1) : clean
+      return api.createNote({ title, folder: targetFolder })
+    },
+    onSuccess: (note) => {
+      void queryClient.invalidateQueries({ queryKey: ['tree'] })
+      void queryClient.invalidateQueries({ queryKey: ['note'] })
+      navigate('/n/' + note.path.replace(/\.md$/i, '').split('/').map(encodeURIComponent).join('/'))
+    },
+  })
+
   if (!notePath) return null
   if (isLoading) {
     return <div className="p-8 text-gray-400">{t('loading')}</div>
   }
   if (error || !note) {
+    const canCreate = accessInfo?.access === 'write'
+    const accessDenied = notFound && can('notes:edit') && !accessLoading && !canCreate
     return (
       <div className="mx-auto max-w-3xl p-8">
         <Breadcrumbs path={notePath} />
@@ -103,6 +134,31 @@ export function NotePage() {
         <p className="mt-2 text-gray-500">
           “{notePath}” {t('notExistYet')}
         </p>
+        {notFound && can('notes:edit') && (
+          <div className="mt-6">
+            {accessLoading && <p className="text-sm text-gray-400">{t('checkingAccess')}</p>}
+            {canCreate && (
+              <>
+                <button
+                  onClick={() => createMissing.mutate()}
+                  disabled={createMissing.isPending}
+                  className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                >
+                  ＋ {t('createThisNote')}
+                </button>
+                <p className="mt-2 text-xs text-gray-400">
+                  {t('createNoteInFolder')} {targetFolder || t('vaultRoot')}
+                </p>
+                {createMissing.error && (
+                  <p className="mt-2 text-sm text-red-500">
+                    {(createMissing.error as Error).message}
+                  </p>
+                )}
+              </>
+            )}
+            {accessDenied && <p className="text-sm text-amber-600 dark:text-amber-400">{t('noFolderAccess')}</p>}
+          </div>
+        )}
       </div>
     )
   }

@@ -55,6 +55,21 @@ const en = {
   templateLabel: 'Template',
   none: 'None',
   create: 'Create',
+  folderPlaceholder: 'Existing or new folder…',
+
+  // Folder / tree actions
+  newFolder: 'New folder',
+  newFolderTitle: 'New folder',
+  newFolderPlaceholder: 'folder or path/to/folder',
+  newNoteHere: 'New note here',
+  newFolderHere: 'New folder here',
+  folderNameLabel: 'Folder name',
+
+  // Missing note (broken link target)
+  createThisNote: 'Create this note',
+  createNoteInFolder: 'Create it in',
+  noFolderAccess: 'You have no write access to this folder — the note cannot be created here.',
+  checkingAccess: 'Checking access…',
 
   // Login page
   usernameLabel: 'Username',
@@ -202,6 +217,21 @@ const ru: Record<TKey, string> = {
   templateLabel: 'Шаблон',
   none: 'Без шаблона',
   create: 'Создать',
+  folderPlaceholder: 'Существующая или новая папка…',
+
+  // Folder / tree actions
+  newFolder: 'Новая папка',
+  newFolderTitle: 'Новая папка',
+  newFolderPlaceholder: 'папка или путь/к/папке',
+  newNoteHere: 'Новая заметка здесь',
+  newFolderHere: 'Новая папка здесь',
+  folderNameLabel: 'Имя папки',
+
+  // Missing note (broken link target)
+  createThisNote: 'Создать эту заметку',
+  createNoteInFolder: 'Будет создана в',
+  noFolderAccess: 'Нет прав на запись в эту папку — заметку здесь создать нельзя.',
+  checkingAccess: 'Проверка доступа…',
 
   usernameLabel: 'Имя пользователя',
   passwordLabel: 'Пароль',

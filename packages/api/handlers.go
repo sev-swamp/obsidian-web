@@ -117,6 +117,43 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 	c.JSON(http.StatusCreated, note)
 }
 
+func (s *Server) handleCreateFolder(c *gin.Context) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	folder := strings.Trim(req.Path, "/")
+	if folder == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder path is required"})
+		return
+	}
+	if s.aclAccess(c, path.Join(folder, "__probe__.md")) < acl.AccessWrite {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no write access to folder " + folder})
+		return
+	}
+	p, err := s.Notes.CreateFolder(actor(c), folder)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"path": p})
+}
+
+// handleAccess reports the calling user's effective access to a path so
+// the UI can decide whether to offer creating a missing note there. The
+// ACL result is capped by the role's global ceiling.
+func (s *Server) handleAccess(c *gin.Context) {
+	p := core.NormalizeNotePath(pathParam(c))
+	access := s.aclAccess(c, p)
+	if ceiling := s.roleAccessCeiling(s.userRole(actor(c))); ceiling < access {
+		access = ceiling
+	}
+	c.JSON(http.StatusOK, gin.H{"path": p, "access": access.String()})
+}
+
 func (s *Server) handleSaveNote(c *gin.Context) {
 	var req struct {
 		Content  string `json:"content"`

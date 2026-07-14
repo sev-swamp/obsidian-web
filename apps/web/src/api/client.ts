@@ -97,6 +97,15 @@ export const api = {
     request<{ status: string }>('/api/trash/purge-all', { method: 'POST' }),
   createNote: (req: CreateNoteRequest) =>
     request<Note>('/api/note', { method: 'POST', body: JSON.stringify(req) }),
+  createFolder: (path: string) =>
+    request<{ path: string }>('/api/folder', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+  access: (path: string) =>
+    request<{ path: string; access: 'none' | 'read' | 'write' }>(
+      `/api/access/${encodePath(path)}`,
+    ),
   deleteNote: (path: string) =>
     request<{ status: string }>(`/api/note/${encodePath(path)}`, { method: 'DELETE' }),
   search: (q: string, limit = 20) =>
