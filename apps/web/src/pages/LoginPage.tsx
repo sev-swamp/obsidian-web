@@ -69,7 +69,7 @@ export function LoginPage() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
-            className="mt-1 mb-3 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 dark:border-gray-700 dark:text-gray-100"
+            className="mt-1 mb-3 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700 dark:text-gray-100"
           />
         </label>
         <label className="block text-sm text-gray-700 dark:text-gray-300">
@@ -78,10 +78,10 @@ export function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 dark:border-gray-700 dark:text-gray-100"
+            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700 dark:text-gray-100"
           />
         </label>
-        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="submit"
           className="mt-6 w-full rounded-lg bg-violet-600 py-2 font-medium text-white hover:bg-violet-700"
@@ -91,7 +91,7 @@ export function LoginPage() {
 
         {sso?.enabled && (
           <>
-            <div className="my-4 flex items-center gap-3 text-xs text-gray-400">
+            <div className="my-4 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
               <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
               ·
               <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />

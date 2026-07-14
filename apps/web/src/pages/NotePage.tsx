@@ -133,7 +133,7 @@ export function NotePage() {
 
   if (!notePath) return null
   if (isLoading) {
-    return <div className="p-8 text-gray-400">{t('loading')}</div>
+    return <div className="p-8 text-gray-500 dark:text-gray-400">{t('loading')}</div>
   }
   if (error || !note) {
     const canCreate = accessInfo?.access === 'write'
@@ -147,7 +147,7 @@ export function NotePage() {
         </p>
         {notFound && can('notes:edit') && (
           <div className="mt-6">
-            {accessLoading && <p className="text-sm text-gray-400">{t('checkingAccess')}</p>}
+            {accessLoading && <p className="text-sm text-gray-500 dark:text-gray-400">{t('checkingAccess')}</p>}
             {canCreate && (
               <>
                 <button
@@ -157,11 +157,11 @@ export function NotePage() {
                 >
                   ＋ {t('createThisNote')}
                 </button>
-                <p className="mt-2 text-xs text-gray-400">
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   {t('createNoteInFolder')} {targetFolder || t('vaultRoot')}
                 </p>
                 {createMissing.error && (
-                  <p className="mt-2 text-sm text-red-500">
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
                     {(createMissing.error as Error).message}
                   </p>
                 )}
@@ -287,7 +287,7 @@ export function NotePage() {
 
       {!editing && note.backlinks && note.backlinks.length > 0 && (
         <footer className="mt-12 border-t border-gray-200 pt-4 dark:border-gray-800">
-          <h2 className="mb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+          <h2 className="mb-2 text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
             {t('linkedMentions')}
           </h2>
           <ul className="space-y-1">

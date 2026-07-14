@@ -49,7 +49,14 @@ mark {
 }
 .dark .markdown a { color: #a78bfa; }
 .markdown a:hover { text-decoration: underline; }
-.markdown a[href*='missing=1'] { color: #9ca3af; }
+/* Unresolved wiki-link: distinguished by a dashed underline, not colour
+   alone, so it's legible for colour-blind readers. */
+.markdown a[href*='missing=1'] {
+  color: #b45309;
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+}
+.dark .markdown a[href*='missing=1'] { color: #fbbf24; }
 
 .markdown ul,
 .markdown ol {

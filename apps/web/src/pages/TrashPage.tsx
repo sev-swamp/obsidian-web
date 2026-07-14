@@ -54,9 +54,9 @@ export function TrashPage() {
         )}
       </div>
 
-      {isLoading && <p className="mt-6 text-gray-400">{t('loading')}</p>}
+      {isLoading && <p className="mt-6 text-gray-500 dark:text-gray-400">{t('loading')}</p>}
       {deleted && deleted.length === 0 && (
-        <p className="mt-6 text-gray-400">{t('trashEmpty')}</p>
+        <p className="mt-6 text-gray-500 dark:text-gray-400">{t('trashEmpty')}</p>
       )}
 
       <ul className="mt-6 space-y-2">
@@ -67,7 +67,7 @@ export function TrashPage() {
           >
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{file.path}</div>
-              <div className="text-xs text-gray-400">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 {t('deletedBy')} {file.actor} · {new Date(file.time).toLocaleString()}
               </div>
             </div>

@@ -74,7 +74,7 @@ export function UserMenu() {
                 <span aria-hidden>🌐</span>
                 {t('language')}
               </span>
-              <span className="text-gray-400" aria-hidden>
+              <span className="text-gray-500 dark:text-gray-400" aria-hidden>
                 ›
               </span>
             </button>
@@ -138,9 +138,9 @@ export function UserMenu() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{name}</span>
-          {role && <span className="block text-xs text-gray-400">{role}</span>}
+          {role && <span className="block text-xs text-gray-500 dark:text-gray-400">{role}</span>}
         </span>
-        <span className="text-xs text-gray-400" aria-hidden>
+        <span className="text-xs text-gray-500 dark:text-gray-400" aria-hidden>
           {open ? '▾' : '▴'}
         </span>
       </button>

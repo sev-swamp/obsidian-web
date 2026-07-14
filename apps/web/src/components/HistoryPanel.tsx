@@ -42,13 +42,13 @@ export function HistoryPanel({
   return (
     <aside className="mt-8 rounded-xl border border-gray-200 dark:border-gray-800">
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
-        <h2 className="text-sm font-semibold tracking-wide text-gray-400 uppercase">
+        <h2 className="text-sm font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
           {t('historyBtn')}
         </h2>
         <button
           onClick={onClose}
           aria-label={t('close')}
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          className="rounded p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           ✕
         </button>
@@ -56,7 +56,7 @@ export function HistoryPanel({
 
       <div className="max-h-72 overflow-y-auto p-2">
         {revisions?.length === 0 && (
-          <p className="px-2 py-3 text-sm text-gray-400">{t('noHistory')}</p>
+          <p className="px-2 py-3 text-sm text-gray-500 dark:text-gray-400">{t('noHistory')}</p>
         )}
         {revisions?.map((rev) => (
           <div key={rev.id}>
@@ -67,8 +67,8 @@ export function HistoryPanel({
               }`}
             >
               <span className="font-medium">{rev.actor}</span>
-              <span className="text-xs text-gray-400">{rev.action}</span>
-              <span className="ml-auto shrink-0 text-xs text-gray-400">
+              <span className="text-xs text-gray-500 dark:text-gray-400">{rev.action}</span>
+              <span className="ml-auto shrink-0 text-xs text-gray-500 dark:text-gray-400">
                 {new Date(rev.time).toLocaleString()}
               </span>
             </button>

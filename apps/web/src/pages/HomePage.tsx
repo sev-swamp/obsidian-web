@@ -19,7 +19,7 @@ export function HomePage() {
 
       {recent && recent.length > 0 && (
         <section className="mt-10">
-          <h2 className="mb-3 text-sm font-semibold tracking-wide text-gray-400 uppercase">
+          <h2 className="mb-3 text-sm font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
             {t('recentlyUpdated')}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -33,8 +33,8 @@ export function HomePage() {
                 className="rounded-xl border border-gray-200 p-4 transition-colors hover:border-violet-400 dark:border-gray-800 dark:hover:border-violet-600"
               >
                 <div className="font-medium">{note.title}</div>
-                <div className="mt-1 truncate text-xs text-gray-400">{note.path}</div>
-                <div className="mt-2 text-xs text-gray-400">
+                <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{note.path}</div>
+                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   {new Date(note.modTime).toLocaleString()}
                 </div>
               </Link>

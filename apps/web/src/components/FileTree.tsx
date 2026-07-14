@@ -62,7 +62,7 @@ function NewFolderInput({
         className="w-full rounded border border-violet-400 bg-transparent px-2 py-0.5 text-sm outline-none"
       />
       {create.error && (
-        <p className="mt-0.5 text-xs text-red-500">{(create.error as Error).message}</p>
+        <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{(create.error as Error).message}</p>
       )}
     </div>
   )
@@ -93,7 +93,7 @@ function TreeEntry({
             onClick={() => setOpen((v) => !v)}
             className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left text-sm font-medium text-gray-700 dark:text-gray-300"
           >
-            <span className="text-xs text-gray-400">{open ? '▾' : '▸'}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{open ? '▾' : '▸'}</span>
             <span className="truncate">{node.name}</span>
           </button>
           {actions.canEdit && (
@@ -158,7 +158,7 @@ function FolderActionButtons({
         onClick={() => actions.onNewNote(folder)}
         title={t('newNoteHere')}
         aria-label={t('newNoteHere')}
-        className="rounded px-1 text-sm text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+        className="rounded px-1 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
       >
         ＋
       </button>
@@ -166,7 +166,7 @@ function FolderActionButtons({
         onClick={() => actions.onNewFolder(folder)}
         title={t('newFolderHere')}
         aria-label={t('newFolderHere')}
-        className="rounded px-1 text-sm text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+        className="rounded px-1 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
       >
         🗀
       </button>
@@ -195,13 +195,13 @@ export function FileTree({ onNavigate }: { onNavigate: () => void }) {
     onCloseInput: () => setFolderInput(null),
   }
 
-  if (isLoading) return <p className="px-2 text-sm text-gray-400">{t('loadingVault')}</p>
-  if (error) return <p className="px-2 text-sm text-red-500">{t('treeError')}</p>
+  if (isLoading) return <p className="px-2 text-sm text-gray-500 dark:text-gray-400">{t('loadingVault')}</p>
+  if (error) return <p className="px-2 text-sm text-red-600 dark:text-red-400">{t('treeError')}</p>
 
   return (
     <nav aria-label={t('files')}>
       <div className="mb-1 flex items-center justify-between px-2">
-        <h2 className="text-xs font-semibold tracking-wide text-gray-400 uppercase">
+        <h2 className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
           {t('files')}
         </h2>
         {canEdit && (
@@ -209,7 +209,7 @@ export function FileTree({ onNavigate }: { onNavigate: () => void }) {
             onClick={() => setFolderInput((cur) => (cur === '' ? null : ''))}
             title={t('newFolder')}
             aria-label={t('newFolder')}
-            className="rounded px-1 text-sm text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+            className="rounded px-1 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
           >
             🗀＋
           </button>

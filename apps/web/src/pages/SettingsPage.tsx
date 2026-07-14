@@ -6,7 +6,7 @@ import { useAuthStore, type Permission } from '../store/auth'
 import { useT, type TKey } from '../i18n'
 
 const inputCls =
-  'w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-violet-500 dark:border-gray-700'
+  'w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700'
 const btnCls =
   'rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800'
 const primaryBtnCls =
@@ -141,7 +141,7 @@ function UsersSection() {
           onChange={(e) => setNewUser({ ...newUser, groups: e.target.value })}
         />
         {createUser.error && (
-          <p className="text-sm text-red-500 sm:col-span-2">
+          <p className="text-sm text-red-600 dark:text-red-400 sm:col-span-2">
             {(createUser.error as Error).message}
           </p>
         )}
@@ -230,7 +230,7 @@ function UserRow({
         {t('deleteUserBtn')}
       </button>
       {(update.error || remove.error) && (
-        <span className="w-full text-xs text-red-500">
+        <span className="w-full text-xs text-red-600 dark:text-red-400">
           {((update.error || remove.error) as Error).message}
         </span>
       )}
@@ -297,7 +297,7 @@ function RolesSection() {
           selected={newRole.permissions}
           onChange={(permissions) => setNewRole({ ...newRole, permissions })}
         />
-        {create.error && <p className="text-sm text-red-500">{(create.error as Error).message}</p>}
+        {create.error && <p className="text-sm text-red-600 dark:text-red-400">{(create.error as Error).message}</p>}
         <button type="submit" disabled={!newRole.name || create.isPending} className={primaryBtnCls}>
           {t('createRole')}
         </button>
@@ -337,14 +337,14 @@ function RoleRow({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-4 py-3 text-left"
       >
-        <span className="text-gray-400">{open ? '▾' : '▸'}</span>
+        <span className="text-gray-500 dark:text-gray-400">{open ? '▾' : '▸'}</span>
         <span className="font-medium">{role.name}</span>
         {role.builtin && (
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
             {t('roleBuiltin')}
           </span>
         )}
-        <span className="ml-auto truncate text-xs text-gray-400">
+        <span className="ml-auto truncate text-xs text-gray-500 dark:text-gray-400">
           {isAdmin ? t('roleAllPermissions') : `${permCount} · ${role.description}`}
         </span>
       </button>
@@ -359,7 +359,7 @@ function RoleRow({
           />
           {isAdmin ? (
             <div className="mt-2">
-              <p className="text-xs text-gray-400">{t('roleAdminFixed')}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{t('roleAdminFixed')}</p>
               <PermissionPicker catalog={catalog} selected={catalog} onChange={() => {}} readOnly />
             </div>
           ) : (
@@ -380,7 +380,7 @@ function RoleRow({
               </button>
             )}
             {save.error && (
-              <span className="text-xs text-red-500">{(save.error as Error).message}</span>
+              <span className="text-xs text-red-600 dark:text-red-400">{(save.error as Error).message}</span>
             )}
           </div>
         </div>
@@ -449,7 +449,7 @@ function GroupsSection() {
 
   return (
     <section>
-      {data?.groups.length === 0 && <p className="text-sm text-gray-400">{t('noGroups')}</p>}
+      {data?.groups.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">{t('noGroups')}</p>}
       <ul className="space-y-2">
         {data?.groups.map((g) => (
           <li
@@ -458,7 +458,7 @@ function GroupsSection() {
           >
             <div className="min-w-0 flex-1">
               <div className="font-medium">{g.name}</div>
-              <div className="truncate text-xs text-gray-400">
+              <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                 {g.members.length > 0 ? g.members.join(', ') : `0 ${t('membersLabel')}`}
               </div>
             </div>
@@ -490,7 +490,7 @@ function GroupsSection() {
           {t('addGroupBtn')}
         </button>
       </form>
-      {add.error && <p className="mt-1 text-sm text-red-500">{(add.error as Error).message}</p>}
+      {add.error && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{(add.error as Error).message}</p>}
     </section>
   )
 }
@@ -530,7 +530,7 @@ function AccessSection() {
         rows={10}
         className={`${inputCls} font-mono text-xs`}
       />
-      {aclError && <p className="mt-1 text-sm text-red-500">{aclError}</p>}
+      {aclError && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{aclError}</p>}
       <button
         onClick={() => {
           try {
@@ -545,7 +545,7 @@ function AccessSection() {
         {t('saveRules')}
       </button>
 
-      <h3 className="mt-8 mb-3 text-sm font-semibold tracking-wide text-gray-400 uppercase">
+      <h3 className="mt-8 mb-3 text-sm font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
         {t('checkSection')}
       </h3>
       <div className="flex flex-wrap items-center gap-2">
@@ -641,9 +641,9 @@ function TokensSection() {
             <div className="min-w-0 flex-1">
               <div className="font-medium">
                 {tok.name}{' '}
-                {tok.revoked && <span className="text-xs text-red-500">({t('revoked')})</span>}
+                {tok.revoked && <span className="text-xs text-red-600 dark:text-red-400">({t('revoked')})</span>}
               </div>
-              <div className="text-xs text-gray-400">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 {tok.permissions.join(', ')} ·{' '}
                 {tok.expiresAt
                   ? `${t('expiresLabel')} ${new Date(tok.expiresAt).toLocaleDateString()}`
@@ -704,7 +704,7 @@ function TokensSection() {
           </div>
         </fieldset>
         {create.error && (
-          <p className="text-sm text-red-500">{(create.error as Error).message}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{(create.error as Error).message}</p>
         )}
         <button
           type="submit"
@@ -756,12 +756,12 @@ function PluginsSection() {
           <div className="min-w-0 flex-1">
             <div className="font-medium">
               {p.name}{' '}
-              <span className="text-xs font-normal text-gray-400">
+              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                 v{p.version} ·{' '}
                 {p.kind === 'backend' ? t('pluginKindBackend') : t('pluginKindUI')}
               </span>
             </div>
-            <div className="text-xs text-gray-400">{p.description}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">{p.description}</div>
           </div>
           <label className="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             <input
@@ -776,7 +776,7 @@ function PluginsSection() {
         </div>
       ))}
       {toggle.error && (
-        <p className="text-sm text-red-500">{(toggle.error as Error).message}</p>
+        <p className="text-sm text-red-600 dark:text-red-400">{(toggle.error as Error).message}</p>
       )}
     </section>
   )
@@ -854,7 +854,7 @@ function SsoSection() {
       <label className="block text-sm text-gray-600 dark:text-gray-400">
         {t('clientSecretLabel')}
         {data?.hasSecret && (
-          <span className="ml-1 text-xs text-gray-400">({t('secretKept')})</span>
+          <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">({t('secretKept')})</span>
         )}
         <input
           className={`${inputCls} mt-1`}
@@ -893,7 +893,7 @@ function SsoSection() {
         {t('autoProvisionLabel')}
       </label>
 
-      {save.error && <p className="text-sm text-red-500">{(save.error as Error).message}</p>}
+      {save.error && <p className="text-sm text-red-600 dark:text-red-400">{(save.error as Error).message}</p>}
       <button
         onClick={() => save.mutate()}
         disabled={save.isPending || form === null}

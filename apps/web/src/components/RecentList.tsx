@@ -14,7 +14,7 @@ export function RecentList({ onNavigate }: { onNavigate: () => void }) {
 
   return (
     <section className="mt-6">
-      <h2 className="mb-1 px-2 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+      <h2 className="mb-1 px-2 text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
         {t('recentChanges')}
       </h2>
       {recent.map((note) => (
@@ -25,7 +25,7 @@ export function RecentList({ onNavigate }: { onNavigate: () => void }) {
           className="block truncate rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
         >
           {note.title}
-          <span className="ml-2 text-xs text-gray-400">
+          <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
             {new Date(note.modTime).toLocaleDateString()}
           </span>
         </Link>

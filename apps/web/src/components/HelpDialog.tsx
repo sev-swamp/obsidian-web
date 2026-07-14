@@ -85,7 +85,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
           <button
             onClick={onClose}
             aria-label={t('helpClose')}
-            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            className="rounded p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             ✕
           </button>
@@ -101,7 +101,7 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
 
         <div className="overflow-y-auto p-4">
           {sections.length === 0 && (
-            <p className="py-8 text-center text-sm text-gray-400">
+            <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
               {t('helpNothingFound')} «{query}»
             </p>
           )}

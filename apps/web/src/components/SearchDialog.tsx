@@ -56,7 +56,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{r.title}</span>
-                  <span className="truncate text-xs text-gray-400">{r.path}</span>
+                  <span className="truncate text-xs text-gray-500 dark:text-gray-400">{r.path}</span>
                 </div>
                 {r.snippet && (
                   <p className="mt-0.5 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">
@@ -67,7 +67,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
             </li>
           ))}
           {query.trim() && results?.length === 0 && (
-            <li className="px-3 py-4 text-center text-sm text-gray-400">{t('noResults')}</li>
+            <li className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">{t('noResults')}</li>
           )}
         </ul>
       </div>

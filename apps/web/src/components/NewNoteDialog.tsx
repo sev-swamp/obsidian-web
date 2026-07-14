@@ -84,7 +84,7 @@ export function NewNoteDialog({
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 dark:border-gray-700"
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700"
               placeholder={t('titlePlaceholder')}
             />
           </label>
@@ -95,7 +95,7 @@ export function NewNoteDialog({
               onChange={(e) => setFolder(e.target.value)}
               list="new-note-folders"
               placeholder={`${t('folderPlaceholder')} (${settings?.notes.defaultFolder || t('vaultRoot')})`}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 dark:border-gray-700"
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700"
             />
             <datalist id="new-note-folders">
               {folders.map((f) => (
@@ -119,7 +119,7 @@ export function NewNoteDialog({
             </select>
           </label>
           {create.error && (
-            <p className="text-sm text-red-500">{(create.error as Error).message}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{(create.error as Error).message}</p>
           )}
           <div className="flex justify-end gap-2 pt-2">
             <button
