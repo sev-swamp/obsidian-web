@@ -6,7 +6,9 @@ import type { ConflictInfo } from '../api/types'
 import { Breadcrumbs } from '../components/Breadcrumbs'
 import { HistoryPanel } from '../components/HistoryPanel'
 import { MarkdownView } from '../components/MarkdownView'
+import { MarkdownEditor } from '../components/MarkdownEditor'
 import { useAuthStore } from '../store/auth'
+import { useThemeStore } from '../store/theme'
 import { usePresenceStore } from '../store/presence'
 import { useWsStore } from '../store/ws'
 import { useT } from '../i18n'
@@ -25,6 +27,7 @@ export function NotePage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const can = useAuthStore((s) => s.can)
   const username = useAuthStore((s) => s.username)
+  const theme = useThemeStore((s) => s.theme)
   const t = useT()
 
   const {
@@ -35,6 +38,14 @@ export function NotePage() {
     queryKey: ['note', notePath.endsWith('.md') ? notePath : notePath + '.md'],
     queryFn: () => api.note(notePath),
     enabled: notePath.length > 0,
+  })
+
+  // Candidate notes for the editor's [[wiki-link]] autocomplete.
+  const { data: allNotes } = useQuery({
+    queryKey: ['notes'],
+    queryFn: api.notes,
+    enabled: editing,
+    staleTime: 60_000,
   })
 
   const canEdit = can('notes:edit') && note?.access !== 'read'
@@ -256,11 +267,11 @@ export function NotePage() {
       </div>
 
       {editing ? (
-        <textarea
+        <MarkdownEditor
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          spellCheck={false}
-          className="h-[70vh] w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-4 font-mono text-sm outline-none focus:border-violet-500 dark:border-gray-700 dark:bg-gray-900"
+          onChange={setDraft}
+          notes={allNotes ?? []}
+          dark={theme === 'dark'}
         />
       ) : (
         <MarkdownView html={note.html ?? ''} />

@@ -110,6 +110,7 @@ export const api = {
     request<{ status: string }>(`/api/note/${encodePath(path)}`, { method: 'DELETE' }),
   search: (q: string, limit = 20) =>
     request<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  notes: () => request<NoteMeta[]>('/api/notes'),
   recent: (limit = 10) => request<NoteMeta[]>(`/api/recent?limit=${limit}`),
   templates: () => request<string[]>('/api/templates'),
   settings: () => request<Settings>('/api/settings'),
