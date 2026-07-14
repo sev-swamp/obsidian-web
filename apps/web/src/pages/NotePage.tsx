@@ -7,12 +7,14 @@ import { Breadcrumbs } from '../components/Breadcrumbs'
 import { HistoryPanel } from '../components/HistoryPanel'
 import { MarkdownView } from '../components/MarkdownView'
 import { MarkdownEditor } from '../components/MarkdownEditor'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 import { usePresenceStore } from '../store/presence'
 import { useWsStore } from '../store/ws'
 import { useT } from '../i18n'
 import { sendPresence } from '../ws'
+import { PlusIcon, PencilIcon, EyeIcon, AlertTriangleIcon } from '../components/icons'
 
 export function NotePage() {
   const params = useParams()
@@ -25,6 +27,7 @@ export function NotePage() {
   const [baseHash, setBaseHash] = useState('')
   const [conflict, setConflict] = useState<ConflictInfo | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const can = useAuthStore((s) => s.can)
   const username = useAuthStore((s) => s.username)
   const theme = useThemeStore((s) => s.theme)
@@ -153,9 +156,9 @@ export function NotePage() {
                 <button
                   onClick={() => createMissing.mutate()}
                   disabled={createMissing.isPending}
-                  className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
                 >
-                  ＋ {t('createThisNote')}
+                  <PlusIcon /> {t('createThisNote')}
                 </button>
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   {t('createNoteInFolder')} {targetFolder || t('vaultRoot')}
@@ -181,13 +184,13 @@ export function NotePage() {
       {(otherEditors.length > 0 || otherViewers.length > 0) && (
         <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
           {otherEditors.length > 0 && (
-            <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-              ✏️ {t('editingNow')}: {otherEditors.join(', ')}
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              <PencilIcon size={13} /> {t('editingNow')}: {otherEditors.join(', ')}
             </span>
           )}
           {otherViewers.length > 0 && (
-            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-              👁 {t('viewingNow')}: {otherViewers.join(', ')}
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+              <EyeIcon size={13} /> {t('viewingNow')}: {otherViewers.join(', ')}
             </span>
           )}
         </div>
@@ -253,9 +256,7 @@ export function NotePage() {
               )}
               {canDelete && (
                 <button
-                  onClick={() => {
-                    if (confirm(`${t('deleteConfirm')} "${note.title}"?`)) remove.mutate()
-                  }}
+                  onClick={() => setConfirmDelete(true)}
                   className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
                 >
                   {t('delete')}
@@ -270,6 +271,7 @@ export function NotePage() {
         <MarkdownEditor
           value={draft}
           onChange={setDraft}
+          onSave={(content) => save.mutate({ content, baseHash })}
           notes={allNotes ?? []}
           dark={theme === 'dark'}
         />
@@ -310,11 +312,23 @@ export function NotePage() {
         </footer>
       )}
 
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`${t('deleteConfirm')} "${note.title}"?`}
+        confirmLabel={t('delete')}
+        danger
+        onConfirm={() => {
+          setConfirmDelete(false)
+          remove.mutate()
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
+
       {conflict && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-            <h2 className="mb-2 text-lg font-semibold text-amber-600 dark:text-amber-400">
-              ⚠️ {t('conflictTitle')}
+            <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-amber-600 dark:text-amber-400">
+              <AlertTriangleIcon size={20} /> {t('conflictTitle')}
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               {t('conflictBody')}

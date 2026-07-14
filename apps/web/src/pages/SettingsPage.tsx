@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import type { AclRule, SsoConfig } from '../api/types'
 import { useAuthStore, type Permission } from '../store/auth'
 import { useT, type TKey } from '../i18n'
+import { SettingsIcon, BanIcon } from '../components/icons'
 
 const inputCls =
   'w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700'
@@ -30,7 +31,9 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-2xl font-bold">⚙️ {t('settingsTitle')}</h1>
+      <h1 className="flex items-center gap-2 text-2xl font-bold">
+        <SettingsIcon size={22} /> {t('settingsTitle')}
+      </h1>
 
       <nav className="mt-6 flex flex-wrap gap-1 border-b border-gray-200 dark:border-gray-800">
         {tabs.map((item) => (
@@ -218,8 +221,13 @@ function UserRow({
         placeholder={t('resetPassword')}
         className="w-44 rounded-lg border border-gray-300 bg-transparent px-2 py-1 text-sm dark:border-gray-700"
       />
-      <button onClick={() => revoke.mutate()} className={btnCls} title={t('revokeSessions')}>
-        ⛔
+      <button
+        onClick={() => revoke.mutate()}
+        className={btnCls}
+        title={t('revokeSessions')}
+        aria-label={t('revokeSessions')}
+      >
+        <BanIcon size={16} />
       </button>
       <button
         onClick={() => {

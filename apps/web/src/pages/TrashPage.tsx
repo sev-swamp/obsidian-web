@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { useT } from '../i18n'
+import { TrashIcon } from '../components/icons'
 
 export function TrashPage() {
   const t = useT()
@@ -40,7 +41,9 @@ export function TrashPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">🗑 {t('trash')}</h1>
+        <h1 className="flex items-center gap-2 text-2xl font-bold">
+          <TrashIcon size={22} /> {t('trash')}
+        </h1>
         {canPurge && deleted && deleted.length > 0 && (
           <button
             onClick={() => {

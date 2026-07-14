@@ -6,6 +6,7 @@ import type { TreeNode } from '../api/types'
 import { useAuthStore } from '../store/auth'
 import { useT } from '../i18n'
 import { NewNoteDialog } from './NewNoteDialog'
+import { FilePlusIcon, FolderPlusIcon } from './icons'
 
 function notePathToUrl(path: string): string {
   const clean = path.replace(/\.md$/i, '')
@@ -97,7 +98,7 @@ function TreeEntry({
             <span className="truncate">{node.name}</span>
           </button>
           {actions.canEdit && (
-            <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100">
+            <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
               <FolderActionButtons folder={node.path} actions={actions} />
             </span>
           )}
@@ -158,17 +159,17 @@ function FolderActionButtons({
         onClick={() => actions.onNewNote(folder)}
         title={t('newNoteHere')}
         aria-label={t('newNoteHere')}
-        className="rounded px-1 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+        className="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-200 hover:text-violet-600 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-violet-400"
       >
-        ＋
+        <FilePlusIcon />
       </button>
       <button
         onClick={() => actions.onNewFolder(folder)}
         title={t('newFolderHere')}
         aria-label={t('newFolderHere')}
-        className="rounded px-1 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
+        className="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-200 hover:text-violet-600 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-violet-400"
       >
-        🗀
+        <FolderPlusIcon />
       </button>
     </>
   )
@@ -205,14 +206,24 @@ export function FileTree({ onNavigate }: { onNavigate: () => void }) {
           {t('files')}
         </h2>
         {canEdit && (
-          <button
-            onClick={() => setFolderInput((cur) => (cur === '' ? null : ''))}
-            title={t('newFolder')}
-            aria-label={t('newFolder')}
-            className="rounded px-1 text-sm text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400"
-          >
-            🗀＋
-          </button>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setNewNote({ open: true, folder: '' })}
+              title={t('newNote')}
+              aria-label={t('newNote')}
+              className="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-200 hover:text-violet-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-violet-400"
+            >
+              <FilePlusIcon />
+            </button>
+            <button
+              onClick={() => setFolderInput((cur) => (cur === '' ? null : ''))}
+              title={t('newFolder')}
+              aria-label={t('newFolder')}
+              className="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-200 hover:text-violet-600 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-violet-400"
+            >
+              <FolderPlusIcon />
+            </button>
+          </div>
         )}
       </div>
       {folderInput === '' && (

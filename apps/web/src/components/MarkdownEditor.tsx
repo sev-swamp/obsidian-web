@@ -68,11 +68,13 @@ function editorTheme(dark: boolean) {
 export function MarkdownEditor({
   value,
   onChange,
+  onSave,
   notes,
   dark,
 }: {
   value: string
   onChange: (value: string) => void
+  onSave?: (content: string) => void
   notes: NoteMeta[]
   dark: boolean
 }) {
@@ -80,8 +82,10 @@ export function MarkdownEditor({
   const view = useRef<EditorView | null>(null)
   // Keep the latest callbacks/data reachable from the (stable) extensions.
   const onChangeRef = useRef(onChange)
+  const onSaveRef = useRef(onSave)
   const notesRef = useRef(notes)
   onChangeRef.current = onChange
+  onSaveRef.current = onSave
   notesRef.current = notes
 
   useEffect(() => {
@@ -97,6 +101,14 @@ export function MarkdownEditor({
         markdown(),
         autocompletion({ override: [wikilinkSource(() => notesRef.current)] }),
         keymap.of([
+          {
+            key: 'Mod-s',
+            preventDefault: true,
+            run: (v) => {
+              onSaveRef.current?.(v.state.doc.toString())
+              return true
+            },
+          },
           ...defaultKeymap,
           ...historyKeymap,
           ...completionKeymap,

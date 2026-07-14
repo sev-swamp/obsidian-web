@@ -11,6 +11,7 @@ import { UserMenu } from './UserMenu'
 import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 import { useT } from '../i18n'
+import { MenuIcon, SearchIcon, SunIcon, MoonIcon } from './icons'
 
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -44,7 +45,7 @@ export function Layout() {
           onClick={() => setSidebarOpen((v) => !v)}
           aria-label={t('toggleSidebar')}
         >
-          ☰
+          <MenuIcon size={20} />
         </button>
         <Link to="/" className="flex items-center gap-2 font-semibold">
           <span className="text-violet-600 dark:text-violet-400">◈</span>
@@ -63,7 +64,7 @@ export function Layout() {
           className="rounded p-1.5 hover:bg-gray-100 sm:hidden dark:hover:bg-gray-800"
           aria-label={t('searchAria')}
         >
-          🔍
+          <SearchIcon size={18} />
         </button>
         {canEdit && (
           <button
@@ -86,7 +87,7 @@ export function Layout() {
           className="rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800"
           aria-label={t('toggleTheme')}
         >
-          {theme === 'dark' ? '☀️' : '🌙'}
+          {theme === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
         </button>
       </header>
 

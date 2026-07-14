@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { useT } from '../i18n'
+import { LockIcon } from '../components/icons'
 
 export function LoginPage() {
   const [username, setUsername] = useState('')
@@ -98,9 +99,9 @@ export function LoginPage() {
             </div>
             <a
               href="/api/auth/sso/login"
-              className="block w-full rounded-lg border border-gray-300 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
             >
-              🔐 {t('ssoLoginWith')} {sso.name}
+              <LockIcon size={15} /> {t('ssoLoginWith')} {sso.name}
             </a>
           </>
         )}

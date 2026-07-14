@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../store/auth'
 import { useLangStore, type Lang } from '../store/lang'
 import { useT } from '../i18n'
+import { SettingsIcon, GlobeIcon, TrashIcon } from './icons'
 
 const langNames: Record<Lang, string> = { en: 'English', ru: 'Русский' }
 
@@ -57,7 +58,7 @@ export function UserMenu() {
         <div className="absolute bottom-full left-0 z-30 mb-1 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
           {can('settings:write') && (
             <button onClick={() => go('/settings')} className={itemCls}>
-              <span aria-hidden>⚙️</span>
+              <SettingsIcon size={15} className="text-gray-500 dark:text-gray-400" />
               {t('settingsTitle')}
             </button>
           )}
@@ -71,7 +72,7 @@ export function UserMenu() {
               className={`${itemCls} justify-between`}
             >
               <span className="flex items-center gap-2">
-                <span aria-hidden>🌐</span>
+                <GlobeIcon size={15} className="text-gray-500 dark:text-gray-400" />
                 {t('language')}
               </span>
               <span className="text-gray-500 dark:text-gray-400" aria-hidden>
@@ -102,7 +103,7 @@ export function UserMenu() {
 
           {can('trash:read') && (
             <button onClick={() => go('/trash')} className={itemCls}>
-              <span aria-hidden>🗑</span>
+              <TrashIcon size={15} className="text-gray-500 dark:text-gray-400" />
               {t('trash')}
             </button>
           )}
