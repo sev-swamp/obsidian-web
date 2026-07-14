@@ -47,7 +47,42 @@ var rolePermissions = map[string][]string{
 	RoleAdmin:  {PermNotesRead, PermNotesEdit, PermNotesDelete, PermHistory, PermUpload, PermSettings, PermTrashRead, PermTrashPurge},
 }
 
-// PermissionsForRole returns the permission set granted by a role.
+// AllPermissions returns the full catalog of assignable permissions, in a
+// stable display order. Custom roles pick from this list.
+func AllPermissions() []string {
+	return []string{
+		PermNotesRead, PermNotesEdit, PermNotesDelete,
+		PermHistory, PermUpload, PermSettings,
+		PermTrashRead, PermTrashPurge,
+	}
+}
+
+// RoleDef is a built-in role definition seeded into the store on install.
+type RoleDef struct {
+	Name        string
+	Description string
+	Permissions []string
+}
+
+// DefaultRoles returns the three roles created on a fresh install. Admin
+// is a superuser (see HasPermission) so its listed permissions are the
+// full catalog for display only.
+func DefaultRoles() []RoleDef {
+	return []RoleDef{
+		{Name: RoleAdmin, Description: "Full access to everything, including settings and role management.", Permissions: AllPermissions()},
+		{Name: RoleEditor, Description: "Read and edit notes, upload files, view history and trash.", Permissions: append([]string(nil), rolePermissions[RoleEditor]...)},
+		{Name: RoleViewer, Description: "Read-only access to notes.", Permissions: append([]string(nil), rolePermissions[RoleViewer]...)},
+	}
+}
+
+// IsBuiltInRole reports whether a role name is one of the protected
+// defaults that cannot be deleted.
+func IsBuiltInRole(name string) bool {
+	return name == RoleAdmin || name == RoleEditor || name == RoleViewer
+}
+
+// PermissionsForRole returns the permission set granted by a built-in
+// role. Dynamic roles are resolved through the store (see Service).
 func PermissionsForRole(role string) []string {
 	perms := rolePermissions[role]
 	out := make([]string, len(perms))
@@ -86,8 +121,13 @@ type Claims struct {
 }
 
 // HasPermission checks the permission list embedded in the token.
-// Tokens issued before permissions existed fall back to the role map.
+// Admin is a superuser and always passes, so new permissions never lock
+// admins out of features (even on tokens issued before the permission
+// existed). Tokens without an embedded list fall back to the role map.
 func (c *Claims) HasPermission(perm string) bool {
+	if c.Role == RoleAdmin {
+		return true
+	}
 	perms := c.Permissions
 	if len(perms) == 0 {
 		perms = rolePermissions[c.Role]
@@ -107,6 +147,26 @@ type Service struct {
 	secret  []byte
 	ttl     time.Duration
 	users   map[string]User
+	// roleResolver returns a role's permissions from the dynamic store;
+	// nil (or an unknown role) falls back to the built-in role map.
+	roleResolver func(role string) ([]string, bool)
+}
+
+// SetRoleResolver installs a resolver so sessions pick up permissions
+// from dynamically managed roles (packages/acl). Optional.
+func (s *Service) SetRoleResolver(fn func(role string) ([]string, bool)) {
+	s.roleResolver = fn
+}
+
+// permissionsFor resolves a role's permissions, preferring the dynamic
+// resolver and falling back to the built-in defaults.
+func (s *Service) permissionsFor(role string) []string {
+	if s.roleResolver != nil {
+		if perms, ok := s.roleResolver(role); ok {
+			return perms
+		}
+	}
+	return PermissionsForRole(role)
 }
 
 // NewService builds the auth service from configuration. Accounts
@@ -168,7 +228,7 @@ func (s *Service) IssueSession(u User, tokenVersion int) (string, *Claims, error
 	return s.issue(&Claims{
 		Username:     u.Username,
 		Role:         role,
-		Permissions:  PermissionsForRole(role),
+		Permissions:  s.permissionsFor(role),
 		TokenVersion: tokenVersion,
 	}, s.ttl)
 }

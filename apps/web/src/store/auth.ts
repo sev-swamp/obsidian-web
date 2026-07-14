@@ -52,8 +52,9 @@ export const useAuthStore = create<AuthState>()(
           unauthorized: false,
         }),
       can: (perm) => {
-        const { token, permissions } = get()
+        const { token, role, permissions } = get()
         if (!token) return true // auth disabled: server accepts everything
+        if (role === 'admin') return true // admin is a superuser (mirrors backend)
         return permissions?.includes(perm) ?? false
       },
     }),

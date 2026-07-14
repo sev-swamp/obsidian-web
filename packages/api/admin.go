@@ -53,8 +53,8 @@ func (s *Server) handleAdminCreateUser(c *gin.Context) {
 	if req.Role == "" {
 		req.Role = auth.RoleViewer
 	}
-	if !auth.ValidRole(req.Role) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown role (viewer|editor|admin)"})
+	if !s.roleKnown(req.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown role: " + req.Role})
 		return
 	}
 	if _, exists := store.User(req.Username); exists {
@@ -91,8 +91,8 @@ func (s *Server) handleAdminUpdateUser(c *gin.Context) {
 		return
 	}
 	if req.Role != "" {
-		if !auth.ValidRole(req.Role) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown role (viewer|editor|admin)"})
+		if !s.roleKnown(req.Role) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown role: " + req.Role})
 			return
 		}
 		rec.Role = req.Role
@@ -276,8 +276,8 @@ func (s *Server) handleAdminPutSSO(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.SSO.DefaultRole != "" && !auth.ValidRole(req.SSO.DefaultRole) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown defaultRole (viewer|editor|admin)"})
+	if req.SSO.DefaultRole != "" && !s.roleKnown(req.SSO.DefaultRole) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown defaultRole: " + req.SSO.DefaultRole})
 		return
 	}
 	if err := store.SetSSO(req.SSO); err != nil {
@@ -287,6 +287,114 @@ func (s *Server) handleAdminPutSSO(c *gin.Context) {
 	cfg := store.SSO()
 	cfg.ClientSecret = ""
 	c.JSON(http.StatusOK, gin.H{"sso": cfg})
+}
+
+// --- roles ------------------------------------------------------------------
+
+// roleKnown reports whether a role name is defined (dynamic store first,
+// then the built-in defaults for setups without a users.yaml).
+func (s *Server) roleKnown(name string) bool {
+	if s.ACL != nil && s.ACL.RoleExists(name) {
+		return true
+	}
+	return auth.ValidRole(name)
+}
+
+func (s *Server) handleAdminListRoles(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"roles":       store.Roles(),
+		"permissions": auth.AllPermissions(),
+	})
+}
+
+type adminRoleRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+}
+
+func (s *Server) handleAdminCreateRole(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	var req adminRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role name is required"})
+		return
+	}
+	if store.RoleExists(req.Name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role already exists"})
+		return
+	}
+	if bad := invalidPermissions(req.Permissions); bad != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown permission: " + bad})
+		return
+	}
+	rec := acl.RoleRecord{Name: req.Name, Description: req.Description, Permissions: req.Permissions}
+	if err := store.UpsertRole(rec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, rec)
+}
+
+func (s *Server) handleAdminUpdateRole(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	name := c.Param("name")
+	if !store.RoleExists(name) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+		return
+	}
+	var req adminRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if bad := invalidPermissions(req.Permissions); bad != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown permission: " + bad})
+		return
+	}
+	rec := acl.RoleRecord{Name: name, Description: req.Description, Permissions: req.Permissions}
+	if err := store.UpsertRole(rec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rec)
+}
+
+func (s *Server) handleAdminDeleteRole(c *gin.Context) {
+	store := s.aclOr503(c)
+	if store == nil {
+		return
+	}
+	if err := store.DeleteRole(c.Param("name")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+}
+
+// invalidPermissions returns the first permission not in the catalog, or
+// "" when all are valid.
+func invalidPermissions(perms []string) string {
+	known := map[string]bool{}
+	for _, p := range auth.AllPermissions() {
+		known[p] = true
+	}
+	for _, p := range perms {
+		if !known[p] {
+			return p
+		}
+	}
+	return ""
 }
 
 // --- plugins ----------------------------------------------------------------

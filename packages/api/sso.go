@@ -122,7 +122,7 @@ func (s *Server) handleSSOCallback(c *gin.Context) {
 			return
 		}
 		role := cfg.DefaultRole
-		if !auth.ValidRole(role) {
+		if !s.roleKnown(role) {
 			role = auth.RoleViewer
 		}
 		// SSO-only account: no password, sign-in works only through the

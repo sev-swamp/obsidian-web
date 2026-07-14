@@ -89,6 +89,17 @@ type Rule struct {
 	Special string  `yaml:"special,omitempty" json:"special,omitempty"` // "owner": Private/<user>/…
 }
 
+// RoleRecord is a role managed through the admin API: a named permission
+// set with a human description. The three built-in roles (admin, editor,
+// viewer) are seeded on install and cannot be deleted.
+type RoleRecord struct {
+	Name        string   `yaml:"name" json:"name"`
+	Description string   `yaml:"description,omitempty" json:"description"`
+	Permissions []string `yaml:"permissions,omitempty" json:"permissions"`
+	// BuiltIn is computed, never persisted: it flags the protected defaults.
+	BuiltIn bool `yaml:"-" json:"builtin"`
+}
+
 // SSOConfig is the OIDC single-sign-on configuration, editable from
 // the settings UI and stored alongside users.
 type SSOConfig struct {
@@ -105,6 +116,7 @@ type SSOConfig struct {
 type fileData struct {
 	Users  []UserRecord `yaml:"users"`
 	Groups []string     `yaml:"groups"`
+	Roles  []RoleRecord `yaml:"roles,omitempty"`
 	ACL    []Rule       `yaml:"acl"`
 	SSO    *SSOConfig   `yaml:"sso,omitempty"`
 	// Plugins holds per-plugin enabled state; absent = enabled.
@@ -119,6 +131,7 @@ type Store struct {
 	users  map[string]*UserRecord
 	order  []string // stable listing order
 	groups  []string // explicitly declared groups
+	roles   []RoleRecord
 	rules   []Rule
 	sso     SSOConfig
 	plugins map[string]bool
@@ -144,6 +157,7 @@ func (s *Store) Reload() error {
 			s.users = map[string]*UserRecord{}
 			s.order = nil
 			s.groups = nil
+			s.roles = nil
 			s.rules = nil
 			s.sso = SSOConfig{}
 			s.plugins = nil
@@ -175,6 +189,7 @@ func (s *Store) Reload() error {
 	s.users = users
 	s.order = order
 	s.groups = data.Groups
+	s.roles = data.Roles
 	s.rules = data.ACL
 	if data.SSO != nil {
 		s.sso = *data.SSO
@@ -189,7 +204,7 @@ func (s *Store) Reload() error {
 // Save persists the store atomically (tmp + rename).
 func (s *Store) Save() error {
 	s.mu.RLock()
-	data := fileData{ACL: s.rules, Groups: s.groups, Plugins: s.plugins}
+	data := fileData{ACL: s.rules, Groups: s.groups, Roles: s.roles, Plugins: s.plugins}
 	if s.sso != (SSOConfig{}) {
 		sso := s.sso
 		data.SSO = &sso
@@ -542,6 +557,126 @@ func (s *Store) DeleteGroup(name string) error {
 		}
 	}
 	s.mu.Unlock()
+	return s.Save()
+}
+
+// --- roles ----------------------------------------------------------------
+
+// builtInRole reports whether a role name is a protected default.
+func builtInRole(name string) bool {
+	return name == "admin" || name == "editor" || name == "viewer"
+}
+
+// SeedRoles installs default role definitions for any that are missing.
+// Called once at startup; existing (possibly customized) roles are kept.
+func (s *Store) SeedRoles(defaults []RoleRecord) error {
+	s.mu.Lock()
+	changed := false
+	have := map[string]bool{}
+	for _, r := range s.roles {
+		have[r.Name] = true
+	}
+	for _, d := range defaults {
+		if !have[d.Name] {
+			s.roles = append(s.roles, d)
+			changed = true
+		}
+	}
+	s.mu.Unlock()
+	if !changed {
+		return nil
+	}
+	return s.Save()
+}
+
+// Roles lists all roles with the built-in flag computed.
+func (s *Store) Roles() []RoleRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]RoleRecord, 0, len(s.roles))
+	for _, r := range s.roles {
+		r.BuiltIn = builtInRole(r.Name)
+		out = append(out, r)
+	}
+	return out
+}
+
+// RoleExists reports whether a role is defined.
+func (s *Store) RoleExists(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.roles {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// PermissionsForRole returns the permissions granted by a stored role.
+// The boolean is false when the role is unknown (caller falls back to
+// built-in defaults).
+func (s *Store) PermissionsForRole(name string) ([]string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.roles {
+		if r.Name == name {
+			out := make([]string, len(r.Permissions))
+			copy(out, r.Permissions)
+			return out, true
+		}
+	}
+	return nil, false
+}
+
+// UpsertRole creates or updates a role. The admin role's permissions are
+// fixed (superuser) and only its description may change.
+func (s *Store) UpsertRole(r RoleRecord) error {
+	if r.Name == "" {
+		return fmt.Errorf("role name is required")
+	}
+	s.mu.Lock()
+	for i := range s.roles {
+		if s.roles[i].Name == r.Name {
+			s.roles[i].Description = r.Description
+			if r.Name != "admin" {
+				s.roles[i].Permissions = r.Permissions
+			}
+			s.mu.Unlock()
+			return s.Save()
+		}
+	}
+	s.roles = append(s.roles, r)
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// DeleteRole removes a custom role. Built-in roles are protected.
+func (s *Store) DeleteRole(name string) error {
+	if builtInRole(name) {
+		return fmt.Errorf("built-in role %q cannot be deleted", name)
+	}
+	s.mu.Lock()
+	found := false
+	for i, r := range s.roles {
+		if r.Name == name {
+			s.roles = append(s.roles[:i], s.roles[i+1:]...)
+			found = true
+			break
+		}
+	}
+	// Reassign users on the deleted role to viewer.
+	if found {
+		for _, u := range s.users {
+			if u.Role == name {
+				u.Role = "viewer"
+			}
+		}
+	}
+	s.mu.Unlock()
+	if !found {
+		return fmt.Errorf("role %q not found", name)
+	}
 	return s.Save()
 }
 

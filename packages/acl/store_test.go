@@ -118,6 +118,61 @@ func TestUserCRUDAndPersistence(t *testing.T) {
 	}
 }
 
+func TestRoleSeedingAndCRUD(t *testing.T) {
+	s := newStore(t)
+	defaults := []RoleRecord{
+		{Name: "admin", Description: "super", Permissions: []string{"notes:read"}},
+		{Name: "editor", Description: "edit", Permissions: []string{"notes:read", "notes:edit"}},
+		{Name: "viewer", Description: "read", Permissions: []string{"notes:read"}},
+	}
+	if err := s.SeedRoles(defaults); err != nil {
+		t.Fatal(err)
+	}
+	// Seeding is idempotent: a second call keeps customizations.
+	if err := s.UpsertRole(RoleRecord{Name: "viewer", Description: "changed", Permissions: []string{"notes:read"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SeedRoles(defaults); err != nil {
+		t.Fatal(err)
+	}
+
+	// Custom role create + resolve.
+	if err := s.UpsertRole(RoleRecord{Name: "auditor", Permissions: []string{"notes:read", "history:read"}}); err != nil {
+		t.Fatal(err)
+	}
+	perms, ok := s.PermissionsForRole("auditor")
+	if !ok || len(perms) != 2 {
+		t.Errorf("auditor perms = %v, ok=%v", perms, ok)
+	}
+
+	// Admin permissions are fixed even when an update tries to change them.
+	if err := s.UpsertRole(RoleRecord{Name: "admin", Description: "d", Permissions: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if perms, _ := s.PermissionsForRole("admin"); len(perms) == 0 {
+		t.Error("admin permissions must not be emptied")
+	}
+
+	// Built-in roles are protected from deletion.
+	if err := s.DeleteRole("viewer"); err == nil {
+		t.Error("deleting a built-in role must fail")
+	}
+
+	// Deleting a custom role survives reload and reassigns nobody wrongly.
+	if err := s.DeleteRole("auditor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if s.RoleExists("auditor") {
+		t.Error("auditor should be gone after delete + reload")
+	}
+	if !s.RoleExists("viewer") {
+		t.Error("viewer should persist")
+	}
+}
+
 func TestTokenLifecycle(t *testing.T) {
 	s := newStore(t)
 	if err := s.AddToken("igor", TokenRecord{ID: "abc", Name: "ci"}); err != nil {

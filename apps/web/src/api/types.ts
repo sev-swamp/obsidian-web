@@ -112,6 +112,13 @@ export interface GroupInfo {
   members: string[]
 }
 
+export interface RoleRecord {
+  name: string
+  description: string
+  permissions: string[]
+  builtin: boolean
+}
+
 export interface SsoConfig {
   enabled: boolean
   name: string

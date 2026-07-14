@@ -92,6 +92,12 @@ func run(configPath, vaultOverride string) error {
 	if err != nil {
 		return fmt.Errorf("users file: %w", err)
 	}
+	// Seed the three built-in roles and let sessions resolve permissions
+	// from the (customizable) role definitions.
+	if err := aclStore.SeedRoles(defaultRoleRecords()); err != nil {
+		return fmt.Errorf("seed roles: %w", err)
+	}
+	authService.SetRoleResolver(aclStore.PermissionsForRole)
 
 	var wsAccess websocket.AccessFunc
 	if cfg.Auth.Enabled {
@@ -189,6 +195,17 @@ func buildUsers(cfg *settings.Config) ([]auth.User, error) {
 		})
 	}
 	return users, nil
+}
+
+// defaultRoleRecords converts the built-in role definitions into store
+// records for seeding users.yaml on first run.
+func defaultRoleRecords() []acl.RoleRecord {
+	defs := auth.DefaultRoles()
+	out := make([]acl.RoleRecord, len(defs))
+	for i, d := range defs {
+		out[i] = acl.RoleRecord{Name: d.Name, Description: d.Description, Permissions: d.Permissions}
+	}
+	return out
 }
 
 // frontendFS prefers an on-disk build (development) over the embedded one.

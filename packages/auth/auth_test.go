@@ -98,6 +98,33 @@ func TestHasPermissionLegacyTokenFallsBackToRole(t *testing.T) {
 	}
 }
 
+func TestAdminIsSuperuser(t *testing.T) {
+	// Even a token missing new permissions must pass every check.
+	c := &Claims{Role: RoleAdmin, Permissions: []string{PermNotesRead}}
+	for _, p := range []string{PermTrashRead, PermTrashPurge, PermSettings, "future:permission"} {
+		if !c.HasPermission(p) {
+			t.Errorf("admin must have %s", p)
+		}
+	}
+}
+
+func TestRoleResolverOverridesBuiltins(t *testing.T) {
+	s := newTestService()
+	s.SetRoleResolver(func(role string) ([]string, bool) {
+		if role == RoleViewer {
+			return []string{PermNotesRead, PermNotesEdit}, true // custom: viewers can edit
+		}
+		return nil, false
+	})
+	_, claims, err := s.Login("reader", "readerpw")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if !claims.HasPermission(PermNotesEdit) {
+		t.Error("resolver-granted permission must appear in the session")
+	}
+}
+
 func TestRoleHierarchy(t *testing.T) {
 	if !Allows(RoleAdmin, RoleViewer) || !Allows(RoleEditor, RoleViewer) {
 		t.Error("higher roles must include lower ones")

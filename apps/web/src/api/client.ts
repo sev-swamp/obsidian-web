@@ -4,6 +4,7 @@ import type {
   ApiTokenRecord,
   GroupInfo,
   PluginStatus,
+  RoleRecord,
   SsoConfig,
   CreateNoteRequest,
   DeletedFile,
@@ -138,6 +139,22 @@ export const api = {
     }),
   adminDeleteGroup: (name: string) =>
     request<{ groups: GroupInfo[] }>(`/api/admin/groups/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+  adminRoles: () =>
+    request<{ roles: RoleRecord[]; permissions: Permission[] }>('/api/admin/roles'),
+  adminCreateRole: (role: { name: string; description: string; permissions: string[] }) =>
+    request<RoleRecord>('/api/admin/roles', { method: 'POST', body: JSON.stringify(role) }),
+  adminUpdateRole: (
+    name: string,
+    patch: { description: string; permissions: string[] },
+  ) =>
+    request<RoleRecord>(`/api/admin/roles/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  adminDeleteRole: (name: string) =>
+    request<{ status: string }>(`/api/admin/roles/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }),
   adminGetSSO: () => request<{ sso: SsoConfig; hasSecret: boolean }>('/api/admin/sso'),

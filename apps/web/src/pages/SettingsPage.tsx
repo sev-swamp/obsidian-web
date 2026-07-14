@@ -12,10 +12,11 @@ const btnCls =
 const primaryBtnCls =
   'rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50'
 
-type Tab = 'users' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso'
+type Tab = 'users' | 'roles' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso'
 
 const tabs: { id: Tab; label: TKey }[] = [
   { id: 'users', label: 'tabUsers' },
+  { id: 'roles', label: 'tabRoles' },
   { id: 'groups', label: 'tabGroups' },
   { id: 'access', label: 'tabAccess' },
   { id: 'tokens', label: 'tabTokens' },
@@ -49,6 +50,7 @@ export function SettingsPage() {
 
       <div className="pt-6">
         {tab === 'users' && <UsersSection />}
+        {tab === 'roles' && <RolesSection />}
         {tab === 'groups' && <GroupsSection />}
         {tab === 'access' && <AccessSection />}
         {tab === 'tokens' && <TokensSection />}
@@ -63,11 +65,20 @@ export function SettingsPage() {
 /* Users                                                              */
 /* ---------------------------------------------------------------- */
 
+// useRoleNames lists the role names for the user role dropdowns, always
+// including the built-in defaults as a fallback.
+function useRoleNames(): string[] {
+  const { data } = useQuery({ queryKey: ['admin-roles'], queryFn: api.adminRoles })
+  const names = data?.roles.map((r) => r.name) ?? []
+  return names.length > 0 ? names : ['viewer', 'editor', 'admin']
+}
+
 function UsersSection() {
   const t = useT()
   const queryClient = useQueryClient()
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
   const { data } = useQuery({ queryKey: ['admin-users'], queryFn: api.adminUsers })
+  const roleNames = useRoleNames()
 
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer', groups: '' })
   const createUser = useMutation({
@@ -88,7 +99,7 @@ function UsersSection() {
     <section>
       <div className="space-y-2">
         {data?.users.map((u) => (
-          <UserRow key={u.username} user={u} onChanged={invalidate} />
+          <UserRow key={u.username} user={u} roleNames={roleNames} onChanged={invalidate} />
         ))}
       </div>
 
@@ -117,9 +128,11 @@ function UsersSection() {
           value={newUser.role}
           onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
         >
-          <option value="viewer">viewer</option>
-          <option value="editor">editor</option>
-          <option value="admin">admin</option>
+          {roleNames.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
         </select>
         <input
           className={inputCls}
@@ -146,9 +159,11 @@ function UsersSection() {
 
 function UserRow({
   user,
+  roleNames,
   onChanged,
 }: {
   user: { username: string; role: string; groups: string[] | null }
+  roleNames: string[]
   onChanged: () => void
 }) {
   const t = useT()
@@ -180,9 +195,11 @@ function UserRow({
         onChange={(e) => update.mutate({ role: e.target.value })}
         className="rounded-lg border border-gray-300 bg-transparent px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-950"
       >
-        <option value="viewer">viewer</option>
-        <option value="editor">editor</option>
-        <option value="admin">admin</option>
+        {roleNames.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
       </select>
       <input
         value={groups}
@@ -217,6 +234,167 @@ function UserRow({
           {((update.error || remove.error) as Error).message}
         </span>
       )}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* Roles                                                              */
+/* ---------------------------------------------------------------- */
+
+function RolesSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({ queryKey: ['admin-roles'], queryFn: api.adminRoles })
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin-roles'] })
+  }
+  const catalog = data?.permissions ?? []
+
+  const [newRole, setNewRole] = useState<{ name: string; description: string; permissions: string[] }>(
+    { name: '', description: '', permissions: [] },
+  )
+  const create = useMutation({
+    mutationFn: () => api.adminCreateRole(newRole),
+    onSuccess: () => {
+      setNewRole({ name: '', description: '', permissions: [] })
+      invalidate()
+    },
+  })
+
+  return (
+    <section>
+      <p className="mb-4 text-sm text-gray-500">{t('rolesHint')}</p>
+      <div className="space-y-3">
+        {data?.roles.map((role) => (
+          <RoleRow key={role.name} role={role} catalog={catalog} onChanged={invalidate} />
+        ))}
+      </div>
+
+      <form
+        className="mt-4 grid gap-2 rounded-xl border border-dashed border-gray-300 p-4 dark:border-gray-700"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (newRole.name) create.mutate()
+        }}
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input
+            className={inputCls}
+            placeholder={t('roleNameLabel')}
+            value={newRole.name}
+            onChange={(e) => setNewRole({ ...newRole, name: e.target.value })}
+          />
+          <input
+            className={inputCls}
+            placeholder={t('roleDescriptionLabel')}
+            value={newRole.description}
+            onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
+          />
+        </div>
+        <PermissionPicker
+          catalog={catalog}
+          selected={newRole.permissions}
+          onChange={(permissions) => setNewRole({ ...newRole, permissions })}
+        />
+        {create.error && <p className="text-sm text-red-500">{(create.error as Error).message}</p>}
+        <button type="submit" disabled={!newRole.name || create.isPending} className={primaryBtnCls}>
+          {t('createRole')}
+        </button>
+      </form>
+    </section>
+  )
+}
+
+function RoleRow({
+  role,
+  catalog,
+  onChanged,
+}: {
+  role: import('../api/types').RoleRecord
+  catalog: string[]
+  onChanged: () => void
+}) {
+  const t = useT()
+  const [description, setDescription] = useState(role.description)
+  const [permissions, setPermissions] = useState<string[]>(role.permissions ?? [])
+  const isAdmin = role.name === 'admin'
+
+  const save = useMutation({
+    mutationFn: () => api.adminUpdateRole(role.name, { description, permissions }),
+    onSuccess: onChanged,
+  })
+  const remove = useMutation({
+    mutationFn: () => api.adminDeleteRole(role.name),
+    onSuccess: onChanged,
+  })
+
+  return (
+    <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+      <div className="flex items-center gap-2">
+        <span className="font-medium">{role.name}</span>
+        {role.builtin && (
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
+            {t('roleBuiltin')}
+          </span>
+        )}
+        {!role.builtin && (
+          <button
+            onClick={() => {
+              if (confirm(`${t('deleteRoleBtn')} «${role.name}»?`)) remove.mutate()
+            }}
+            className={`${btnCls} ml-auto text-red-600 dark:text-red-400`}
+          >
+            {t('deleteRoleBtn')}
+          </button>
+        )}
+      </div>
+      <input
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder={t('roleDescriptionLabel')}
+        className={`${inputCls} mt-2`}
+      />
+      {isAdmin ? (
+        <p className="mt-2 text-xs text-gray-400">{t('roleAdminFixed')}</p>
+      ) : (
+        <PermissionPicker catalog={catalog} selected={permissions} onChange={setPermissions} />
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <button onClick={() => save.mutate()} disabled={save.isPending} className={primaryBtnCls}>
+          {t('saveRole')}
+        </button>
+        {save.error && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
+      </div>
+    </div>
+  )
+}
+
+function PermissionPicker({
+  catalog,
+  selected,
+  onChange,
+}: {
+  catalog: string[]
+  selected: string[]
+  onChange: (permissions: string[]) => void
+}) {
+  const toggle = (perm: string, on: boolean) =>
+    onChange(on ? [...selected, perm] : selected.filter((p) => p !== perm))
+
+  return (
+    <div className="mt-2 grid gap-1 sm:grid-cols-2">
+      {catalog.map((perm) => (
+        <label key={perm} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+          <input
+            type="checkbox"
+            checked={selected.includes(perm)}
+            onChange={(e) => toggle(perm, e.target.checked)}
+            className="h-4 w-4 accent-violet-600"
+          />
+          <code className="text-xs">{perm}</code>
+        </label>
+      ))}
     </div>
   )
 }
