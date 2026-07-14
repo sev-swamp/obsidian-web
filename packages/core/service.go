@@ -345,6 +345,15 @@ func (s *NoteService) RestoreDeleted(actor, p string) error {
 	return fmt.Errorf("file %q not found in trash", p)
 }
 
+// PurgeTrash permanently removes paths from the trash. Paths that are
+// not in the trash are silently ignored.
+func (s *NoteService) PurgeTrash(paths []string) error {
+	if s.history == nil {
+		return fmt.Errorf("history is disabled")
+	}
+	return s.history.PurgeDeleted(paths)
+}
+
 // record writes a history revision (no-op when history is disabled).
 func (s *NoteService) record(actor, p, action string) {
 	if s.history == nil {

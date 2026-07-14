@@ -11,6 +11,7 @@ import (
 
 	"github.com/obsidianweb/obsidianweb/packages/acl"
 	"github.com/obsidianweb/obsidianweb/packages/auth"
+	"github.com/obsidianweb/obsidianweb/packages/core"
 )
 
 // aclOr503 guards admin endpoints that need the users.yaml store.
@@ -322,6 +323,9 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 	if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if s.Bus != nil {
+		s.Bus.Publish(core.Event{Type: core.EventPluginChanged, Actor: actor(c)})
 	}
 	c.JSON(http.StatusOK, s.Plugins.Statuses(s.pluginEnabled))
 }

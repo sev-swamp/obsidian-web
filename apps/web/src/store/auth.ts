@@ -9,6 +9,8 @@ export type Permission =
   | 'history:read'
   | 'files:upload'
   | 'settings:write'
+  | 'trash:read'
+  | 'trash:purge'
 
 interface AuthState {
   token: string | null

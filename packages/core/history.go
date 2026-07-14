@@ -40,6 +40,9 @@ type History interface {
 	ChangesIn(path, rev string) (string, error)
 	// Deleted lists files removed from the vault, newest first.
 	Deleted(limit int) ([]DeletedFile, error)
+	// PurgeDeleted permanently removes the given paths from the trash so
+	// they no longer appear in Deleted results. An empty slice is a no-op.
+	PurgeDeleted(paths []string) error
 }
 
 // ConflictError is returned by SaveNote when the note changed since the

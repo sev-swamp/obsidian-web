@@ -139,5 +139,6 @@ export interface VaultEvent {
     | 'file.deleted'
     | 'tree.changed'
     | 'index.updated'
+    | 'plugin.changed'
   path?: string
 }

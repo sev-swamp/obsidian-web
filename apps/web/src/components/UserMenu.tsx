@@ -100,7 +100,7 @@ export function UserMenu() {
             )}
           </div>
 
-          {can('history:read') && (
+          {can('trash:read') && (
             <button onClick={() => go('/trash')} className={itemCls}>
               <span aria-hidden>🗑</span>
               {t('trash')}

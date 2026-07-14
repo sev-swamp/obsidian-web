@@ -5,6 +5,7 @@
 package history
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -227,6 +228,9 @@ func (g *Git) Deleted(limit int) ([]core.DeletedFile, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	g.mu.Lock()
+	purged := g.loadPurged()
+	g.mu.Unlock()
 	const maxWalk = 2000
 	walked := 0
 	seen := map[string]bool{}
@@ -238,7 +242,7 @@ func (g *Git) Deleted(limit int) ([]core.DeletedFile, error) {
 		}
 		msg := strings.SplitN(c.Message, "\n", 2)[0]
 		path, ok := strings.CutPrefix(msg, "delete: ")
-		if !ok || seen[path] {
+		if !ok || seen[path] || purged[path] {
 			return nil
 		}
 		seen[path] = true
@@ -261,6 +265,52 @@ func (g *Git) Deleted(limit int) ([]core.DeletedFile, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// purgedFilePath returns the path to the JSON file that tracks permanently
+// purged trash entries. Stored inside .git/ so it is never committed.
+func (g *Git) purgedFilePath() string {
+	return filepath.Join(g.root, ".git", "obsidianweb-trash-purged.json")
+}
+
+func (g *Git) loadPurged() map[string]bool {
+	data, err := os.ReadFile(g.purgedFilePath())
+	if err != nil {
+		return map[string]bool{}
+	}
+	var paths []string
+	if json.Unmarshal(data, &paths) != nil {
+		return map[string]bool{}
+	}
+	set := map[string]bool{}
+	for _, p := range paths {
+		set[p] = true
+	}
+	return set
+}
+
+func (g *Git) savePurged(set map[string]bool) error {
+	paths := make([]string, 0, len(set))
+	for p := range set {
+		paths = append(paths, p)
+	}
+	data, _ := json.Marshal(paths)
+	return os.WriteFile(g.purgedFilePath(), data, 0o644)
+}
+
+// PurgeDeleted permanently hides the given paths from Deleted results by
+// recording them in .git/obsidianweb-trash-purged.json.
+func (g *Git) PurgeDeleted(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	purged := g.loadPurged()
+	for _, p := range paths {
+		purged[p] = true
+	}
+	return g.savePurged(purged)
 }
 
 var errStopIteration = errors.New("stop")

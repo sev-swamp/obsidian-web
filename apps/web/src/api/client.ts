@@ -87,6 +87,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),
+  trashPurge: (path: string) =>
+    request<{ status: string }>('/api/trash/purge', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+  trashPurgeAll: () =>
+    request<{ status: string }>('/api/trash/purge-all', { method: 'POST' }),
   createNote: (req: CreateNoteRequest) =>
     request<Note>('/api/note', { method: 'POST', body: JSON.stringify(req) }),
   deleteNote: (path: string) =>

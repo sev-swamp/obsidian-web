@@ -30,6 +30,7 @@ type Server struct {
 	Hub      *websocket.Hub
 	Plugins  *plugins.Manager
 	Obsidian *obsidian.Compat
+	Bus      core.EventBus
 	// WebFS is the embedded (or on-disk) frontend; nil means API-only.
 	WebFS fs.FS
 	Log   *slog.Logger
@@ -93,7 +94,20 @@ func (s *Server) Router() *gin.Engine {
 	{
 		hist.GET("/history/*path", s.handleHistoryLog)
 		hist.GET("/diff/*path", s.handleHistoryDiff)
-		hist.GET("/trash", s.handleTrash)
+	}
+
+	// Trash has its own permission (trash:read) so it can be granted
+	// independently of full history access.
+	trash := r.Group("/api", s.requirePermission(auth.PermTrashRead))
+	{
+		trash.GET("/trash", s.handleTrash)
+	}
+
+	// Permanent trash deletion requires trash:purge.
+	purge := r.Group("/api", s.requirePermission(auth.PermTrashPurge))
+	{
+		purge.POST("/trash/purge", s.handleTrashPurge)
+		purge.POST("/trash/purge-all", s.handleTrashPurgeAll)
 	}
 
 	edit := r.Group("/api", s.requirePermission(auth.PermNotesEdit))

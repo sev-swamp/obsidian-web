@@ -132,6 +132,7 @@ func run(configPath, vaultOverride string) error {
 		Hub:      hub,
 		Plugins:  pluginManager,
 		Obsidian: obsidian.New(vault.Root()),
+		Bus:      bus,
 		WebFS:    frontendFS(cfg, log),
 		Log:      log,
 	}

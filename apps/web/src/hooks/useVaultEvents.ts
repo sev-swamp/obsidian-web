@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { VaultEvent } from '../api/types'
 import { useAuthStore } from '../store/auth'
 import { usePresenceStore } from '../store/presence'
+import { useWsStore } from '../store/ws'
 import { setSocket } from '../ws'
 
 interface PresenceEvent {
@@ -19,6 +20,7 @@ export function useVaultEvents() {
   const queryClient = useQueryClient()
   const token = useAuthStore((s) => s.token)
   const updatePresence = usePresenceStore((s) => s.update)
+  const bumpConnection = useWsStore((s) => s.bump)
 
   useEffect(() => {
     let socket: WebSocket | null = null
@@ -32,6 +34,7 @@ export function useVaultEvents() {
       socket.onopen = () => {
         retry = 1000
         setSocket(socket)
+        bumpConnection()
       }
       socket.onmessage = (msg) => {
         let event: VaultEvent | PresenceEvent
@@ -64,6 +67,9 @@ export function useVaultEvents() {
           case 'index.updated':
             void queryClient.invalidateQueries({ queryKey: ['search'] })
             break
+          case 'plugin.changed':
+            void queryClient.invalidateQueries({ queryKey: ['plugins'] })
+            break
         }
       }
       socket.onclose = () => {
@@ -81,5 +87,5 @@ export function useVaultEvents() {
       setSocket(null)
       socket?.close()
     }
-  }, [queryClient, token, updatePresence])
+  }, [queryClient, token, updatePresence, bumpConnection])
 }

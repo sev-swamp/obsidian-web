@@ -81,6 +81,10 @@ const en = {
   trash: 'Trash',
   trashEmpty: 'Trash is empty',
   deletedBy: 'deleted by',
+  purgeAction: 'Delete permanently',
+  purgeAllAction: 'Clear trash',
+  purgeConfirm: 'Permanently delete this file? This cannot be undone.',
+  purgeAllConfirm: 'Permanently clear the entire trash? This cannot be undone.',
 
   // Help dialog
   helpTitle: 'Syntax reference',
@@ -210,6 +214,10 @@ const ru: Record<TKey, string> = {
   trash: 'Корзина',
   trashEmpty: 'Корзина пуста',
   deletedBy: 'удалил(а)',
+  purgeAction: 'Удалить навсегда',
+  purgeAllAction: 'Очистить корзину',
+  purgeConfirm: 'Удалить файл навсегда? Это действие нельзя отменить.',
+  purgeAllConfirm: 'Полностью очистить корзину? Это действие нельзя отменить.',
 
   helpTitle: 'Справка по синтаксису',
   helpPlaceholder: 'Поиск по справке… например: выделение жирным, таблица, ссылка',

@@ -4,11 +4,12 @@ import "sync"
 
 // Event types published on the bus and forwarded to WebSocket clients.
 const (
-	EventFileCreated  = "file.created"
-	EventFileChanged  = "file.changed"
-	EventFileDeleted  = "file.deleted"
-	EventTreeChanged  = "tree.changed"
-	EventIndexUpdated = "index.updated"
+	EventFileCreated   = "file.created"
+	EventFileChanged   = "file.changed"
+	EventFileDeleted   = "file.deleted"
+	EventTreeChanged   = "tree.changed"
+	EventIndexUpdated  = "index.updated"
+	EventPluginChanged = "plugin.changed"
 )
 
 // Event is a domain event. Path is vault-relative; Actor is the

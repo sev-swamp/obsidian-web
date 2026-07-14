@@ -404,6 +404,38 @@ func (s *Server) handleTrashRestore(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "restored"})
 }
 
+func (s *Server) handleTrashPurge(c *gin.Context) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+	if err := s.Notes.PurgeTrash([]string{req.Path}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "purged"})
+}
+
+func (s *Server) handleTrashPurgeAll(c *gin.Context) {
+	deleted, err := s.Notes.Trash(0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	paths := make([]string, len(deleted))
+	for i, d := range deleted {
+		paths[i] = d.Path
+	}
+	if err := s.Notes.PurgeTrash(paths); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "purged"})
+}
+
 // Settings API exposes only the runtime-editable subset (note rules).
 func (s *Server) handleGetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

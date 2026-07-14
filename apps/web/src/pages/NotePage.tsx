@@ -8,6 +8,7 @@ import { HistoryPanel } from '../components/HistoryPanel'
 import { MarkdownView } from '../components/MarkdownView'
 import { useAuthStore } from '../store/auth'
 import { usePresenceStore } from '../store/presence'
+import { useWsStore } from '../store/ws'
 import { useT } from '../i18n'
 import { sendPresence } from '../ws'
 
@@ -48,12 +49,15 @@ export function NotePage() {
     setHistoryOpen(false)
   }, [notePath])
 
-  // Presence: announce viewing/editing of the current note.
+  const connectionId = useWsStore((s) => s.connectionId)
+
+  // Presence: announce viewing/editing. Re-runs on WS reconnect so the
+  // server learns our state again after the old connection dropped.
   useEffect(() => {
     if (!canonicalPath) return
     sendPresence(canonicalPath, editing ? 'editing' : 'viewing')
     return () => sendPresence(canonicalPath, 'left')
-  }, [canonicalPath, editing])
+  }, [canonicalPath, editing, connectionId])
 
   const presence = usePresenceStore((s) =>
     canonicalPath ? s.byPath[canonicalPath] : undefined,
