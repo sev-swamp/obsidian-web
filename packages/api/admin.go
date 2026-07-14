@@ -190,11 +190,71 @@ func (s *Server) handleAdminCheck(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "user and path query parameters are required"})
 		return
 	}
+	// Folder ACL only narrows access; the role's global permissions are
+	// the real ceiling. A viewer (no notes:edit) can never write, even on
+	// an unrestricted path, so cap the ACL result by the role ceiling.
+	role := s.userRole(username)
+	effective := store.Access(username, path)
+	if ceiling := s.roleAccessCeiling(role); ceiling < effective {
+		effective = ceiling
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"user":   username,
 		"path":   path,
-		"access": store.Access(username, path).String(),
+		"role":   role,
+		"access": effective.String(),
 	})
+}
+
+// userRole resolves a user's role from the store, falling back to the
+// static config accounts, then to viewer.
+func (s *Server) userRole(username string) string {
+	if s.ACL != nil {
+		if rec, ok := s.ACL.User(username); ok && rec.Role != "" {
+			return rec.Role
+		}
+	}
+	if su, ok := s.Auth.StaticUser(username); ok && su.Role != "" {
+		return su.Role
+	}
+	return auth.RoleViewer
+}
+
+// roleAccessCeiling maps a role's note permissions to the highest folder
+// access it could ever have: notes:edit → write, notes:read → read.
+func (s *Server) roleAccessCeiling(role string) acl.Access {
+	if role == auth.RoleAdmin {
+		return acl.AccessWrite
+	}
+	perms, ok := s.rolePermissions(role)
+	if !ok {
+		perms = auth.PermissionsForRole(role)
+	}
+	hasRead, hasEdit := false, false
+	for _, p := range perms {
+		switch p {
+		case auth.PermNotesRead:
+			hasRead = true
+		case auth.PermNotesEdit:
+			hasEdit = true
+		}
+	}
+	switch {
+	case hasEdit:
+		return acl.AccessWrite
+	case hasRead:
+		return acl.AccessRead
+	default:
+		return acl.AccessNone
+	}
+}
+
+// rolePermissions resolves a role's permissions from the dynamic store.
+func (s *Server) rolePermissions(role string) ([]string, bool) {
+	if s.ACL != nil {
+		return s.ACL.PermissionsForRole(role)
+	}
+	return nil, false
 }
 
 func (s *Server) handleAdminReload(c *gin.Context) {

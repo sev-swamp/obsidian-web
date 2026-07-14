@@ -316,9 +316,11 @@ function RoleRow({
   onChanged: () => void
 }) {
   const t = useT()
+  const [open, setOpen] = useState(false)
   const [description, setDescription] = useState(role.description)
   const [permissions, setPermissions] = useState<string[]>(role.permissions ?? [])
   const isAdmin = role.name === 'admin'
+  const permCount = role.permissions?.length ?? 0
 
   const save = useMutation({
     mutationFn: () => api.adminUpdateRole(role.name, { description, permissions }),
@@ -330,42 +332,59 @@ function RoleRow({
   })
 
   return (
-    <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
-      <div className="flex items-center gap-2">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left"
+      >
+        <span className="text-gray-400">{open ? '▾' : '▸'}</span>
         <span className="font-medium">{role.name}</span>
         {role.builtin && (
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-800">
             {t('roleBuiltin')}
           </span>
         )}
-        {!role.builtin && (
-          <button
-            onClick={() => {
-              if (confirm(`${t('deleteRoleBtn')} «${role.name}»?`)) remove.mutate()
-            }}
-            className={`${btnCls} ml-auto text-red-600 dark:text-red-400`}
-          >
-            {t('deleteRoleBtn')}
-          </button>
-        )}
-      </div>
-      <input
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder={t('roleDescriptionLabel')}
-        className={`${inputCls} mt-2`}
-      />
-      {isAdmin ? (
-        <p className="mt-2 text-xs text-gray-400">{t('roleAdminFixed')}</p>
-      ) : (
-        <PermissionPicker catalog={catalog} selected={permissions} onChange={setPermissions} />
+        <span className="ml-auto truncate text-xs text-gray-400">
+          {isAdmin ? t('roleAllPermissions') : `${permCount} · ${role.description}`}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-100 px-4 py-3 dark:border-gray-800/60">
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={t('roleDescriptionLabel')}
+            className={inputCls}
+          />
+          {isAdmin ? (
+            <div className="mt-2">
+              <p className="text-xs text-gray-400">{t('roleAdminFixed')}</p>
+              <PermissionPicker catalog={catalog} selected={catalog} onChange={() => {}} readOnly />
+            </div>
+          ) : (
+            <PermissionPicker catalog={catalog} selected={permissions} onChange={setPermissions} />
+          )}
+          <div className="mt-3 flex items-center gap-2">
+            <button onClick={() => save.mutate()} disabled={save.isPending} className={primaryBtnCls}>
+              {t('saveRole')}
+            </button>
+            {!role.builtin && (
+              <button
+                onClick={() => {
+                  if (confirm(`${t('deleteRoleBtn')} «${role.name}»?`)) remove.mutate()
+                }}
+                className={`${btnCls} text-red-600 dark:text-red-400`}
+              >
+                {t('deleteRoleBtn')}
+              </button>
+            )}
+            {save.error && (
+              <span className="text-xs text-red-500">{(save.error as Error).message}</span>
+            )}
+          </div>
+        </div>
       )}
-      <div className="mt-2 flex items-center gap-2">
-        <button onClick={() => save.mutate()} disabled={save.isPending} className={primaryBtnCls}>
-          {t('saveRole')}
-        </button>
-        {save.error && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
-      </div>
     </div>
   )
 }
@@ -374,10 +393,12 @@ function PermissionPicker({
   catalog,
   selected,
   onChange,
+  readOnly = false,
 }: {
   catalog: string[]
   selected: string[]
   onChange: (permissions: string[]) => void
+  readOnly?: boolean
 }) {
   const toggle = (perm: string, on: boolean) =>
     onChange(on ? [...selected, perm] : selected.filter((p) => p !== perm))
@@ -389,6 +410,7 @@ function PermissionPicker({
           <input
             type="checkbox"
             checked={selected.includes(perm)}
+            disabled={readOnly}
             onChange={(e) => toggle(perm, e.target.checked)}
             className="h-4 w-4 accent-violet-600"
           />
@@ -496,7 +518,7 @@ function AccessSection() {
   })
 
   const [check, setCheck] = useState({ user: '', path: '' })
-  const [checkResult, setCheckResult] = useState('')
+  const [checkResult, setCheckResult] = useState<{ access: string; role: string } | null>(null)
 
   return (
     <section>
@@ -543,8 +565,8 @@ function AccessSection() {
           onClick={() => {
             void api
               .adminCheck(check.user, check.path)
-              .then((r) => setCheckResult(r.access))
-              .catch((e: Error) => setCheckResult(e.message))
+              .then((r) => setCheckResult({ access: r.access, role: r.role }))
+              .catch((e: Error) => setCheckResult({ access: e.message, role: '' }))
           }}
           disabled={!check.user || !check.path}
           className={btnCls}
@@ -554,14 +576,17 @@ function AccessSection() {
         {checkResult && (
           <span
             className={`rounded-full px-3 py-1 text-sm font-medium ${
-              checkResult === 'write'
+              checkResult.access === 'write'
                 ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300'
-                : checkResult === 'read'
+                : checkResult.access === 'read'
                   ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                   : 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
             }`}
           >
-            {t('accessResult')}: {checkResult}
+            {t('accessResult')}: {checkResult.access}
+            {checkResult.role && (
+              <span className="ml-1 font-normal opacity-70">({checkResult.role})</span>
+            )}
           </span>
         )}
       </div>

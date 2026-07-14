@@ -175,7 +175,7 @@ export const api = {
       headers: { Authorization: `Bearer ${token}` },
     }),
   adminCheck: (user: string, path: string) =>
-    request<{ access: string }>(
+    request<{ access: string; role: string }>(
       `/api/admin/check?user=${encodeURIComponent(user)}&path=${encodeURIComponent(path)}`,
     ),
   // Personal API tokens
