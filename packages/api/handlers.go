@@ -148,8 +148,12 @@ func (s *Server) handleCreateFolder(c *gin.Context) {
 func (s *Server) handleAccess(c *gin.Context) {
 	p := core.NormalizeNotePath(pathParam(c))
 	access := s.aclAccess(c, p)
-	if ceiling := s.roleAccessCeiling(s.userRole(actor(c))); ceiling < access {
-		access = ceiling
+	// The role ceiling only applies when auth is on; with auth disabled
+	// aclAccess already grants write and there is no role to cap by.
+	if s.Auth.Enabled {
+		if ceiling := s.roleAccessCeiling(s.userRole(actor(c))); ceiling < access {
+			access = ceiling
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"path": p, "access": access.String()})
 }
