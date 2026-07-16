@@ -8,6 +8,15 @@ body,
   height: 100%;
 }
 
+/* Default text colour so content rendered outside the Layout wrapper
+   (e.g. the app-level confirm dialog) stays legible in dark mode. */
+body {
+  color: #111827; /* gray-900 */
+}
+.dark body {
+  color: #f3f4f6; /* gray-100 */
+}
+
 /* Search-hit highlighting inside the help dialog. */
 mark {
   background: #fde68a;
