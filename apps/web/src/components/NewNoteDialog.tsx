@@ -64,8 +64,13 @@ export function NewNoteDialog({
 
   if (!open) return null
 
+  // Don't discard a started note on an accidental backdrop click.
+  const requestClose = () => {
+    if (!title.trim()) onClose()
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={requestClose}>
       <div
         className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
         onClick={(e) => e.stopPropagation()}

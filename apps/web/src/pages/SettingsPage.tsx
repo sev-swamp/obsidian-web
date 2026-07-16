@@ -5,6 +5,7 @@ import type { AclRule, SsoConfig } from '../api/types'
 import { useAuthStore, type Permission } from '../store/auth'
 import { useT, type TKey } from '../i18n'
 import { SettingsIcon, BanIcon } from '../components/icons'
+import { useConfirm } from '../components/ConfirmDialog'
 
 const inputCls =
   'w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700'
@@ -170,6 +171,7 @@ function UserRow({
   onChanged: () => void
 }) {
   const t = useT()
+  const confirm = useConfirm()
   const [groups, setGroups] = useState((user.groups ?? []).join(', '))
   const [password, setPassword] = useState('')
 
@@ -230,9 +232,13 @@ function UserRow({
         <BanIcon size={16} />
       </button>
       <button
-        onClick={() => {
-          if (confirm(`${t('deleteUserBtn')} ${user.username}?`)) remove.mutate()
-        }}
+        onClick={() =>
+          void confirm({
+            title: `${t('deleteUserBtn')} ${user.username}?`,
+            confirmLabel: t('deleteUserBtn'),
+            danger: true,
+          }).then((ok) => ok && remove.mutate())
+        }
         className={`${btnCls} text-red-600 dark:text-red-400`}
       >
         {t('deleteUserBtn')}
@@ -324,6 +330,7 @@ function RoleRow({
   onChanged: () => void
 }) {
   const t = useT()
+  const confirm = useConfirm()
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState(role.description)
   const [permissions, setPermissions] = useState<string[]>(role.permissions ?? [])
@@ -379,9 +386,13 @@ function RoleRow({
             </button>
             {!role.builtin && (
               <button
-                onClick={() => {
-                  if (confirm(`${t('deleteRoleBtn')} «${role.name}»?`)) remove.mutate()
-                }}
+                onClick={() =>
+                  void confirm({
+                    title: `${t('deleteRoleBtn')} «${role.name}»?`,
+                    confirmLabel: t('deleteRoleBtn'),
+                    danger: true,
+                  }).then((ok) => ok && remove.mutate())
+                }
                 className={`${btnCls} text-red-600 dark:text-red-400`}
               >
                 {t('deleteRoleBtn')}
@@ -435,6 +446,7 @@ function PermissionPicker({
 
 function GroupsSection() {
   const t = useT()
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
   const { data } = useQuery({ queryKey: ['admin-groups'], queryFn: api.adminGroups })
   const [name, setName] = useState('')
@@ -471,9 +483,13 @@ function GroupsSection() {
               </div>
             </div>
             <button
-              onClick={() => {
-                if (confirm(`${t('deleteUserBtn')} «${g.name}»?`)) del.mutate(g.name)
-              }}
+              onClick={() =>
+                void confirm({
+                  title: `${t('deleteUserBtn')} «${g.name}»?`,
+                  confirmLabel: t('deleteUserBtn'),
+                  danger: true,
+                }).then((ok) => ok && del.mutate(g.name))
+              }
               className={`${btnCls} shrink-0 text-red-600 dark:text-red-400`}
             >
               {t('deleteUserBtn')}

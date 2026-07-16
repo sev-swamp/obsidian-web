@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { useConfirm } from './ConfirmDialog'
 import { useT } from '../i18n'
 
 // HistoryPanel lists revisions of a note; selecting one shows the diff
@@ -16,6 +17,7 @@ export function HistoryPanel({
 }) {
   const [selected, setSelected] = useState<string | null>(null)
   const t = useT()
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
 
   const { data: revisions } = useQuery({
@@ -94,9 +96,12 @@ export function HistoryPanel({
                 </pre>
                 {canEdit && (
                   <button
-                    onClick={() => {
-                      if (confirm(t('restoreConfirm'))) restore.mutate(rev.id)
-                    }}
+                    onClick={() =>
+                      void confirm({
+                        title: t('restoreConfirm'),
+                        confirmLabel: t('restoreAction'),
+                      }).then((ok) => ok && restore.mutate(rev.id))
+                    }
                     disabled={restore.isPending}
                     className="mt-2 rounded-lg border border-gray-300 px-3 py-1 text-xs hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                   >

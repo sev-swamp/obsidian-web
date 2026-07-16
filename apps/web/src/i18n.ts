@@ -55,6 +55,7 @@ const en = {
   templateLabel: 'Template',
   none: 'None',
   create: 'Create',
+  confirm: 'Confirm',
   folderPlaceholder: 'Existing or new folder…',
 
   // Folder / tree actions
@@ -217,6 +218,7 @@ const ru: Record<TKey, string> = {
   templateLabel: 'Шаблон',
   none: 'Без шаблона',
   create: 'Создать',
+  confirm: 'Подтвердить',
   folderPlaceholder: 'Существующая или новая папка…',
 
   // Folder / tree actions

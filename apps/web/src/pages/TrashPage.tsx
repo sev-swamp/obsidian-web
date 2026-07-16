@@ -3,9 +3,11 @@ import { api } from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { useT } from '../i18n'
 import { TrashIcon } from '../components/icons'
+import { useConfirm } from '../components/ConfirmDialog'
 
 export function TrashPage() {
   const t = useT()
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
   const can = useAuthStore((s) => s.can)
   const canPurge = can('trash:purge')
@@ -46,9 +48,13 @@ export function TrashPage() {
         </h1>
         {canPurge && deleted && deleted.length > 0 && (
           <button
-            onClick={() => {
-              if (window.confirm(t('purgeAllConfirm'))) purgeAll.mutate()
-            }}
+            onClick={() =>
+              void confirm({
+                title: t('purgeAllConfirm'),
+                confirmLabel: t('purgeAllAction'),
+                danger: true,
+              }).then((ok) => ok && purgeAll.mutate())
+            }
             disabled={isPending}
             className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
           >
@@ -83,9 +89,13 @@ export function TrashPage() {
             </button>
             {canPurge && (
               <button
-                onClick={() => {
-                  if (window.confirm(t('purgeConfirm'))) purge.mutate(file.path)
-                }}
+                onClick={() =>
+                  void confirm({
+                    title: t('purgeConfirm'),
+                    confirmLabel: t('purgeAction'),
+                    danger: true,
+                  }).then((ok) => ok && purge.mutate(file.path))
+                }
                 disabled={isPending}
                 className="shrink-0 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
               >

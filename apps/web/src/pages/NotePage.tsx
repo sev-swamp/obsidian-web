@@ -7,7 +7,7 @@ import { Breadcrumbs } from '../components/Breadcrumbs'
 import { HistoryPanel } from '../components/HistoryPanel'
 import { MarkdownView } from '../components/MarkdownView'
 import { MarkdownEditor } from '../components/MarkdownEditor'
-import { ConfirmDialog } from '../components/ConfirmDialog'
+import { useConfirm } from '../components/ConfirmDialog'
 import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 import { usePresenceStore } from '../store/presence'
@@ -27,7 +27,7 @@ export function NotePage() {
   const [baseHash, setBaseHash] = useState('')
   const [conflict, setConflict] = useState<ConflictInfo | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const confirm = useConfirm()
   const can = useAuthStore((s) => s.can)
   const username = useAuthStore((s) => s.username)
   const theme = useThemeStore((s) => s.theme)
@@ -256,7 +256,13 @@ export function NotePage() {
               )}
               {canDelete && (
                 <button
-                  onClick={() => setConfirmDelete(true)}
+                  onClick={() =>
+                    void confirm({
+                      title: `${t('deleteConfirm')} "${note.title}"?`,
+                      confirmLabel: t('delete'),
+                      danger: true,
+                    }).then((ok) => ok && remove.mutate())
+                  }
                   className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
                 >
                   {t('delete')}
@@ -311,18 +317,6 @@ export function NotePage() {
           </ul>
         </footer>
       )}
-
-      <ConfirmDialog
-        open={confirmDelete}
-        title={`${t('deleteConfirm')} "${note.title}"?`}
-        confirmLabel={t('delete')}
-        danger
-        onConfirm={() => {
-          setConfirmDelete(false)
-          remove.mutate()
-        }}
-        onCancel={() => setConfirmDelete(false)}
-      />
 
       {conflict && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
