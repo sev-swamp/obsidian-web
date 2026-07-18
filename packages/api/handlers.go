@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"mime"
 	"net/http"
 	"path"
@@ -119,6 +120,14 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 	}
 	p, err := s.Notes.CreateNote(actor(c), req)
 	if err != nil {
+		// Validation/template errors are the caller's to fix; file-system
+		// failures would leak host paths ("open /vault/…: permission
+		// denied") and are server trouble.
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			s.internalError(c, err)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
