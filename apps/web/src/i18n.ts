@@ -84,6 +84,8 @@ const en = {
   restoreConfirm: 'Restore this version?',
   rollbackAction: 'Undo this change',
   rollbackConfirm: 'Undo this change and return the note to its previous version?',
+  restoreDeletedAction: 'Restore deleted content',
+  restoreDeletedConfirm: 'Restore the note content as it was before this deletion?',
   restoreUnchanged: 'The content already matches this version — nothing to restore.',
   restoredFrom: 'restored from',
   conflictTitle: 'Save conflict',
@@ -96,6 +98,14 @@ const en = {
   // Presence
   editingNow: 'Editing now',
   viewingNow: 'Viewing',
+
+  // Vault statistics (vault-stats plugin)
+  statsTitle: 'Vault statistics',
+  statsNotes: 'Notes',
+  statsFolders: 'Folders',
+  statsAttachments: 'Attachments',
+  statsLinks: 'Links',
+  statsBrokenLinks: 'Broken links',
 
   // Trash
   trash: 'Trash',
@@ -254,6 +264,8 @@ const ru: Record<TKey, string> = {
   restoreConfirm: 'Восстановить эту версию?',
   rollbackAction: 'Откатить это изменение',
   rollbackConfirm: 'Откатить это изменение и вернуть заметку к предыдущей версии?',
+  restoreDeletedAction: 'Восстановить удалённое',
+  restoreDeletedConfirm: 'Восстановить содержимое заметки, каким оно было до этого удаления?',
   restoreUnchanged: 'Содержимое уже совпадает с этой версией — восстанавливать нечего.',
   restoredFrom: 'восстановлено из',
   conflictTitle: 'Конфликт сохранения',
@@ -265,6 +277,13 @@ const ru: Record<TKey, string> = {
 
   editingNow: 'Сейчас редактирует',
   viewingNow: 'Просматривают',
+
+  statsTitle: 'Статистика хранилища',
+  statsNotes: 'Заметки',
+  statsFolders: 'Папки',
+  statsAttachments: 'Вложения',
+  statsLinks: 'Ссылки',
+  statsBrokenLinks: 'Битые ссылки',
 
   trash: 'Корзина',
   trashEmpty: 'Корзина пуста',

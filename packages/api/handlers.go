@@ -449,6 +449,10 @@ func (s *Server) handleHistoryDiff(c *gin.Context) {
 		diff, err = h.Diff(diffPath, from, c.Query("to"))
 	}
 	if err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not present at this revision"})
+			return
+		}
 		s.internalError(c, err)
 		return
 	}
@@ -470,6 +474,12 @@ func (s *Server) handleRestore(c *gin.Context) {
 	if err := s.Notes.RestoreNote(actor(c), pathParam(c), req.Rev); err != nil {
 		if errors.Is(err, core.ErrRestoreUnchanged) {
 			c.JSON(http.StatusOK, gin.H{"status": "unchanged"})
+			return
+		}
+		// Unknown revision, or the file is absent at it (e.g. its own
+		// delete commit) — the caller's mistake, not server trouble.
+		if errors.Is(err, core.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not present at this revision"})
 			return
 		}
 		s.internalError(c, err)

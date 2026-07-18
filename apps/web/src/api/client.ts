@@ -14,6 +14,7 @@ import type {
   SearchResult,
   Settings,
   TreeNode,
+  VaultStats,
 } from './types'
 import { useAuthStore, type Permission } from '../store/auth'
 
@@ -175,6 +176,8 @@ export const api = {
     }),
   ssoStatus: () => request<{ enabled: boolean; name: string }>('/api/auth/sso/status'),
   plugins: () => request<PluginStatus[]>('/api/plugins'),
+  // Served by the built-in vault-stats plugin; 404 when it is disabled.
+  vaultStats: () => request<VaultStats>('/api/plugins/vault-stats/summary'),
   adminSetPlugin: (id: string, enabled: boolean) =>
     request<PluginStatus[]>(`/api/admin/plugins/${encodeURIComponent(id)}`, {
       method: 'PUT',

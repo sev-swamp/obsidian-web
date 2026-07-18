@@ -7,6 +7,26 @@ export function HomePage() {
   const { data: recent } = useQuery({ queryKey: ['recent'], queryFn: () => api.recent(12) })
   const t = useT()
 
+  // The vault-stats plugin powers this section: disabling it in the
+  // settings hides the block (and its endpoint answers 404).
+  const { data: pluginList } = useQuery({ queryKey: ['plugins'], queryFn: api.plugins })
+  const statsEnabled = pluginList?.find((p) => p.id === 'vault-stats')?.enabled ?? false
+  const { data: stats } = useQuery({
+    queryKey: ['vault-stats'],
+    queryFn: api.vaultStats,
+    enabled: statsEnabled,
+  })
+
+  const statItems = stats
+    ? ([
+        [t('statsNotes'), stats.notes],
+        [t('statsFolders'), stats.folders],
+        [t('statsAttachments'), stats.attachments],
+        [t('statsLinks'), stats.links],
+        [t('statsBrokenLinks'), stats.brokenLinks],
+      ] as const)
+    : []
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <h1 className="text-3xl font-bold">
@@ -16,6 +36,25 @@ export function HomePage() {
         {t('tagline')}{' '}
         <kbd className="rounded bg-gray-100 px-1.5 text-sm dark:bg-gray-800">⌘K</kbd>.
       </p>
+
+      {statsEnabled && stats && (
+        <section className="mt-10">
+          <h2 className="mb-3 text-sm font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
+            {t('statsTitle')}
+          </h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {statItems.map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-xl border border-gray-200 p-3 text-center dark:border-gray-800"
+              >
+                <div className="text-xl font-semibold">{value}</div>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{label}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {recent && recent.length > 0 && (
         <section className="mt-10">

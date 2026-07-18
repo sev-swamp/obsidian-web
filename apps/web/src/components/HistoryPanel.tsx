@@ -48,6 +48,8 @@ export function HistoryPanel({
       void queryClient.invalidateQueries({ queryKey: ['history', path] })
       setSelected(null)
     },
+    // A failed restore must never look like a silent no-op.
+    onError: (err) => setNotice(err instanceof Error ? err.message : String(err)),
   })
 
   useEffect(() => {
@@ -88,10 +90,30 @@ export function HistoryPanel({
           <p className="px-2 py-3 text-sm text-gray-500 dark:text-gray-400">{t('noHistory')}</p>
         )}
         {revisions?.map((rev, index) => {
-          // Undoing the newest change means restoring the state of the
-          // next revision in the (file-filtered) log.
-          const isTop = index === 0
-          const undoTarget = isTop ? revisions[1] : null
+          // The state *at* a delete revision is "file absent", so its
+          // button restores the content as of the previous revision
+          // instead. The top revision's diff describes the current
+          // content — its button undoes the change (also the previous
+          // revision's state). Everything else restores its own state.
+          const next: (typeof rev) | undefined = revisions[index + 1]
+          const restoreOp =
+            rev.action === 'delete'
+              ? next && {
+                  target: next.id,
+                  label: t('restoreDeletedAction'),
+                  confirmTitle: t('restoreDeletedConfirm'),
+                }
+              : index === 0
+                ? next && {
+                    target: next.id,
+                    label: t('rollbackAction'),
+                    confirmTitle: t('rollbackConfirm'),
+                  }
+                : {
+                    target: rev.id,
+                    label: t('restoreAction'),
+                    confirmTitle: t('restoreConfirm'),
+                  }
           const sourceInList =
             rev.sourceRev && revisions.some((r) => r.id === rev.sourceRev)
               ? rev.sourceRev
@@ -151,21 +173,18 @@ export function HistoryPanel({
                         </span>
                       ))}
                   </pre>
-                  {canEdit && (!isTop || undoTarget) && (
+                  {canEdit && restoreOp && (
                     <button
                       onClick={() =>
                         void confirm({
-                          title: isTop ? t('rollbackConfirm') : t('restoreConfirm'),
-                          confirmLabel: isTop ? t('rollbackAction') : t('restoreAction'),
-                        }).then(
-                          (ok) =>
-                            ok && restore.mutate(isTop ? undoTarget!.id : rev.id),
-                        )
+                          title: restoreOp.confirmTitle,
+                          confirmLabel: restoreOp.label,
+                        }).then((ok) => ok && restore.mutate(restoreOp.target))
                       }
                       disabled={restore.isPending}
                       className="mt-2 rounded-lg border border-gray-300 px-3 py-1 text-xs hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                     >
-                      {isTop ? t('rollbackAction') : t('restoreAction')}
+                      {restoreOp.label}
                     </button>
                   )}
                 </div>

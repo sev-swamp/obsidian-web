@@ -102,6 +102,14 @@ export interface AclRule {
   special?: 'owner' | ''
 }
 
+export interface VaultStats {
+  notes: number
+  attachments: number
+  folders: number
+  links: number
+  brokenLinks: number
+}
+
 export interface PluginStatus {
   id: string
   name: string

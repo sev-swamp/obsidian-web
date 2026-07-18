@@ -210,7 +210,8 @@ func (g *Git) Log(path string, limit int) ([]core.Revision, error) {
 	return out, nil
 }
 
-// FileAt returns the file content at a revision.
+// FileAt returns the file content at a revision. A file absent from
+// that revision (e.g. its own delete commit) reports core.ErrNotFound.
 func (g *Git) FileAt(path, rev string) ([]byte, error) {
 	commit, err := g.commitAt(rev)
 	if err != nil {
@@ -218,7 +219,7 @@ func (g *Git) FileAt(path, rev string) ([]byte, error) {
 	}
 	f, err := commit.File(path)
 	if err != nil {
-		return nil, fmt.Errorf("%s not present at %s: %w", path, rev, err)
+		return nil, fmt.Errorf("%s not present at %s: %w", path, rev, core.ErrNotFound)
 	}
 	content, err := f.Contents()
 	if err != nil {
@@ -310,7 +311,7 @@ var errStopIteration = errors.New("stop")
 func (g *Git) commitAt(rev string) (*object.Commit, error) {
 	h, err := g.repo.ResolveRevision(plumbing.Revision(rev))
 	if err != nil {
-		return nil, fmt.Errorf("resolve revision %q: %w", rev, err)
+		return nil, fmt.Errorf("resolve revision %q: %w", rev, core.ErrNotFound)
 	}
 	return g.repo.CommitObject(*h)
 }
