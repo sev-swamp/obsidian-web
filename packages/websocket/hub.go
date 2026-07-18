@@ -6,9 +6,11 @@ package websocket
 import (
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,17 +27,29 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// Same-origin only: a foreign page opening a WebSocket to a local
-	// instance (auth disabled) would otherwise receive vault events.
-	// Non-browser clients send no Origin header and are allowed.
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		u, err := url.Parse(origin)
-		return err == nil && u.Host == r.Host
-	},
+	CheckOrigin:     originAllowed,
+}
+
+// originAllowed blocks cross-site WebSocket hijacking: a foreign page
+// opening a WebSocket to a local instance (auth disabled) would
+// otherwise receive vault events. Only hostnames are compared — ports
+// differ legitimately behind reverse proxies (nginx forwards $host
+// without the public port), and the CSWSH threat is a different host,
+// not a different port. Non-browser clients send no Origin and pass.
+func originAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.EqualFold(u.Hostname(), host)
 }
 
 // AccessFunc restricts which vault paths a user may learn about through
