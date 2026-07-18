@@ -58,13 +58,24 @@ func Open(root, mode string, log *slog.Logger) (*Git, error) {
 		if err := g.commitAll("local", "init: vault snapshot"); err != nil {
 			return nil, err
 		}
+		if err := g.initTrashIndex(); err != nil {
+			return nil, err
+		}
 		log.Info("vault history initialized", "root", root)
 		return g, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &Git{repo: repo, root: root, mode: mode, log: log}, nil
+	g := &Git{repo: repo, root: root, mode: mode, log: log}
+	if mode == ModeManaged {
+		// External repositories are read-only for us: no delete commits of
+		// ours to index, so the trash stays empty there.
+		if err := g.initTrashIndex(); err != nil {
+			return nil, err
+		}
+	}
+	return g, nil
 }
 
 // Record captures the current state of path as a commit.
@@ -73,7 +84,7 @@ func Open(root, mode string, log *slog.Logger) (*Git, error) {
 // entire worktree on every call (O(vault size) per save, all under
 // g.mu). Instead the on-disk blob is compared against HEAD directly and
 // staging uses SkipStatus.
-func (g *Git) Record(actor, path, action string) error {
+func (g *Git) Record(actor, path, action, detail string) error {
 	if g.mode != ModeManaged {
 		return nil // external repositories are read-only for us
 	}
@@ -103,11 +114,36 @@ func (g *Git) Record(actor, path, action string) error {
 	} else if _, err := w.Remove(path); err != nil {
 		return fmt.Errorf("stage delete %s: %w", path, err)
 	}
-	_, err = w.Commit(fmt.Sprintf("%s: %s", action, path), &git.CommitOptions{
+	// The parent of the commit we are about to make holds the last
+	// content of a deleted file — that is what the trash restores.
+	var parent plumbing.Hash
+	if ref, err := g.repo.Head(); err == nil {
+		parent = ref.Hash()
+	}
+	msg := fmt.Sprintf("%s: %s", action, path)
+	if detail != "" {
+		msg += "\n\n" + restoredFromTrailer + detail + "\n"
+	}
+	hash, err := w.Commit(msg, &git.CommitOptions{
 		Author: signature(actor),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	g.updateTrashIndex(core.DeletedFile{
+		Path:       path,
+		Actor:      actor,
+		Time:       time.Now(),
+		RestoreRev: parent.String(),
+		DeleteRev:  hash.String(),
+	}, !exists)
+	return nil
 }
+
+// restoredFromTrailer marks the source revision in a restore commit's
+// body; the first message line keeps the "action: path" shape that
+// revisionFrom parses.
+const restoredFromTrailer = "Restored-From: "
 
 // headBlobHash returns the blob hash of path in the HEAD commit.
 func (g *Git) headBlobHash(path string) (plumbing.Hash, bool) {
@@ -246,60 +282,9 @@ func (g *Git) ChangesIn(path, rev string) (string, error) {
 	return lineDiff(string(before), string(after)), nil
 }
 
-// Deleted lists files removed through the platform, newest first.
-func (g *Git) Deleted(limit int) ([]core.DeletedFile, error) {
-	iter, err := g.repo.Log(&git.LogOptions{})
-	if err != nil {
-		return nil, err
-	}
-	defer iter.Close()
-	// limit <= 0 means "everything reachable": capping it at a page size
-	// here would make purge-all silently miss older entries. The walk is
-	// still bounded by maxWalk.
-	if limit <= 0 {
-		limit = int(^uint(0) >> 1)
-	}
-	g.mu.Lock()
-	purged := g.loadPurged()
-	g.mu.Unlock()
-	const maxWalk = 2000
-	walked := 0
-	seen := map[string]bool{}
-	var out []core.DeletedFile
-	err = iter.ForEach(func(c *object.Commit) error {
-		walked++
-		if walked > maxWalk || len(out) >= limit {
-			return errStopIteration
-		}
-		msg := strings.SplitN(c.Message, "\n", 2)[0]
-		path, ok := strings.CutPrefix(msg, "delete: ")
-		if !ok || seen[path] || purged[path] {
-			return nil
-		}
-		seen[path] = true
-		// Still deleted? A later create would have brought it back.
-		if _, statErr := os.Stat(filepath.Join(g.root, filepath.FromSlash(path))); statErr == nil {
-			return nil
-		}
-		if len(c.ParentHashes) == 0 {
-			return nil
-		}
-		out = append(out, core.DeletedFile{
-			Path:       path,
-			Actor:      c.Author.Name,
-			Time:       c.Author.When,
-			RestoreRev: c.ParentHashes[0].String(),
-		})
-		return nil
-	})
-	if err != nil && !errors.Is(err, errStopIteration) {
-		return nil, err
-	}
-	return out, nil
-}
-
-// purgedFilePath returns the path to the JSON file that tracks permanently
-// purged trash entries. Stored inside .git/ so it is never committed.
+// purgedFilePath returns the path to the legacy JSON file of purged
+// trash paths. It is only consulted by the migration log scan so
+// entries the user already purged do not reappear in the new index.
 func (g *Git) purgedFilePath() string {
 	return filepath.Join(g.root, ".git", "obsidianweb-trash-purged.json")
 }
@@ -320,30 +305,6 @@ func (g *Git) loadPurged() map[string]bool {
 	return set
 }
 
-func (g *Git) savePurged(set map[string]bool) error {
-	paths := make([]string, 0, len(set))
-	for p := range set {
-		paths = append(paths, p)
-	}
-	data, _ := json.Marshal(paths)
-	return os.WriteFile(g.purgedFilePath(), data, 0o644)
-}
-
-// PurgeDeleted permanently hides the given paths from Deleted results by
-// recording them in .git/obsidianweb-trash-purged.json.
-func (g *Git) PurgeDeleted(paths []string) error {
-	if len(paths) == 0 {
-		return nil
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	purged := g.loadPurged()
-	for _, p := range paths {
-		purged[p] = true
-	}
-	return g.savePurged(purged)
-}
-
 var errStopIteration = errors.New("stop")
 
 func (g *Git) commitAt(rev string) (*object.Commit, error) {
@@ -360,12 +321,20 @@ func revisionFrom(c *object.Commit) core.Revision {
 	if idx := strings.Index(msg, ": "); idx > 0 {
 		action = msg[:idx]
 	}
+	source := ""
+	for _, line := range strings.Split(c.Message, "\n") {
+		if v, ok := strings.CutPrefix(line, restoredFromTrailer); ok {
+			source = strings.TrimSpace(v)
+			break
+		}
+	}
 	return core.Revision{
-		ID:      c.Hash.String(),
-		Actor:   c.Author.Name,
-		Action:  action,
-		Message: msg,
-		Time:    c.Author.When,
+		ID:        c.Hash.String(),
+		Actor:     c.Author.Name,
+		Action:    action,
+		Message:   msg,
+		Time:      c.Author.When,
+		SourceRev: source,
 	}
 }
 

@@ -324,6 +324,9 @@ func (s *NoteService) DeleteNote(actor, p string) error {
 }
 
 // RestoreNote brings a file back to its content at the given revision.
+// When the current content already matches, nothing is written and
+// ErrRestoreUnchanged is returned so the caller can say so instead of
+// pretending a restore happened.
 func (s *NoteService) RestoreNote(actor, p, rev string) error {
 	if s.history == nil {
 		return fmt.Errorf("history is disabled")
@@ -338,11 +341,24 @@ func (s *NoteService) RestoreNote(actor, p, rev string) error {
 	defer lock.Unlock()
 
 	existed := s.fs.Exists(p)
+	if existed {
+		current, err := s.fs.Read(p)
+		if err != nil {
+			return err
+		}
+		if string(current) == string(content) {
+			return ErrRestoreUnchanged
+		}
+		// Edits not yet in history (external editors, watcher debounce)
+		// would be lost by the overwrite — snapshot them first. Record
+		// is a no-op when the content already matches the last revision.
+		s.record(ActorExternal, p, "save")
+	}
 	if err := s.fs.Write(p, content); err != nil {
 		return err
 	}
 	s.indexNote(p, content)
-	s.record(actor, p, "restore")
+	s.recordDetail(actor, p, "restore", rev)
 	if existed {
 		s.bus.Publish(Event{Type: EventFileChanged, Path: p, Actor: actor})
 	} else {
@@ -388,13 +404,19 @@ func (s *NoteService) PurgeTrash(paths []string) error {
 
 // record writes a history revision (no-op when history is disabled).
 func (s *NoteService) record(actor, p, action string) {
+	s.recordDetail(actor, p, action, "")
+}
+
+// recordDetail is record with action-specific context (the source
+// revision for restores).
+func (s *NoteService) recordDetail(actor, p, action, detail string) {
 	if s.history == nil {
 		return
 	}
 	if actor == "" {
 		actor = "local"
 	}
-	if err := s.history.Record(actor, p, action); err != nil {
+	if err := s.history.Record(actor, p, action, detail); err != nil {
 		s.log.Warn("history record failed", "path", p, "error", err)
 	}
 }

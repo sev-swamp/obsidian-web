@@ -27,6 +27,8 @@ export interface Revision {
   action: string
   message: string
   time: string
+  /** Revision a restore was taken from (restore revisions only). */
+  sourceRev?: string
 }
 
 export interface DeletedFile {
@@ -34,6 +36,7 @@ export interface DeletedFile {
   actor: string
   time: string
   restoreRev: string
+  deleteRev: string
 }
 
 export interface ConflictInfo {
@@ -67,6 +70,7 @@ export interface NoteRules {
 export interface Settings {
   notes: NoteRules
   vault: { templatesDir: string; attachmentsDir: string }
+  history: { enabled: boolean; mode: 'managed' | 'external' | '' }
 }
 
 export interface CreateNoteRequest {

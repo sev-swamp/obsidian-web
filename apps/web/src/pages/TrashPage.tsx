@@ -51,6 +51,7 @@ export function TrashPage() {
             onClick={() =>
               void confirm({
                 title: t('purgeAllConfirm'),
+                message: t('purgeNote'),
                 confirmLabel: t('purgeAllAction'),
                 danger: true,
               }).then((ok) => ok && purgeAll.mutate())
@@ -71,7 +72,7 @@ export function TrashPage() {
       <ul className="mt-6 space-y-2">
         {deleted?.map((file) => (
           <li
-            key={file.path}
+            key={`${file.path}@${file.deleteRev}`}
             className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800"
           >
             <div className="min-w-0 flex-1">
@@ -92,6 +93,7 @@ export function TrashPage() {
                 onClick={() =>
                   void confirm({
                     title: t('purgeConfirm'),
+                    message: t('purgeNote'),
                     confirmLabel: t('purgeAction'),
                     danger: true,
                   }).then((ok) => ok && purge.mutate(file.path))

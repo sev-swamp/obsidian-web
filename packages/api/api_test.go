@@ -19,6 +19,7 @@ import (
 	"github.com/obsidianweb/obsidianweb/packages/auth"
 	"github.com/obsidianweb/obsidianweb/packages/core"
 	"github.com/obsidianweb/obsidianweb/packages/filesystem"
+	"github.com/obsidianweb/obsidianweb/packages/history"
 	"github.com/obsidianweb/obsidianweb/packages/links"
 	"github.com/obsidianweb/obsidianweb/packages/markdown"
 	"github.com/obsidianweb/obsidianweb/packages/plugins"
@@ -89,6 +90,11 @@ func newTestEnv(t *testing.T) *testEnv {
 	if err := notes.ReindexAll(); err != nil {
 		t.Fatal(err)
 	}
+	hist, err := history.Open(vaultDir, history.ModeManaged, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes.AttachHistory(hist, time.Minute)
 
 	usersFile := filepath.Join(t.TempDir(), "users.yaml")
 	if err := os.WriteFile(usersFile, []byte(usersYAML), 0o600); err != nil {
@@ -202,6 +208,42 @@ func TestPermissionMatrix(t *testing.T) {
 				t.Fatalf("%s %s: got %d, want %d (body: %s)", tc.method, tc.target, w.Code, tc.want, w.Body.String())
 			}
 		})
+	}
+}
+
+// TestTrashPurgeACL: purge honours the folder ACL — removing an entry
+// from the trash needs write access to its path, and purge-all only
+// clears what the caller sees in their own trash view.
+func TestTrashPurgeACL(t *testing.T) {
+	env := newTestEnv(t)
+	// Admin-role tokens carry trash:purge; the folder ACL still applies
+	// per username (owner rule on Private/*/**).
+	alice := env.token(t, "alice", auth.RoleAdmin)
+	bob := env.token(t, "bob", auth.RoleAdmin)
+
+	// Each deletes their own private note; both entries land in the trash.
+	if w := env.do(http.MethodDelete, "/api/note/Private/alice/secret", alice, ""); w.Code != http.StatusOK {
+		t.Fatalf("alice delete: %d (%s)", w.Code, w.Body.String())
+	}
+	if w := env.do(http.MethodDelete, "/api/note/Private/bob/secret", bob, ""); w.Code != http.StatusOK {
+		t.Fatalf("bob delete: %d (%s)", w.Code, w.Body.String())
+	}
+
+	// Purging a path the caller cannot write is forbidden.
+	if w := env.do(http.MethodPost, "/api/trash/purge", alice, `{"path":"Private/bob/secret.md"}`); w.Code != http.StatusForbidden {
+		t.Fatalf("foreign purge: got %d, want 403 (%s)", w.Code, w.Body.String())
+	}
+
+	// Purge-all clears only alice's visible entries.
+	if w := env.do(http.MethodPost, "/api/trash/purge-all", alice, ""); w.Code != http.StatusOK {
+		t.Fatalf("purge-all: %d (%s)", w.Code, w.Body.String())
+	}
+	if w := env.do(http.MethodGet, "/api/trash", alice, ""); !strings.Contains(w.Body.String(), "[]") {
+		t.Fatalf("alice trash not empty: %s", w.Body.String())
+	}
+	w := env.do(http.MethodGet, "/api/trash", bob, "")
+	if !strings.Contains(w.Body.String(), "Private/bob/secret.md") {
+		t.Fatalf("bob's entry was purged by alice: %s", w.Body.String())
 	}
 }
 

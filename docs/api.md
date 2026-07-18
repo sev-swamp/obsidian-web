@@ -17,7 +17,9 @@ uses the same list to show or hide actions (edit, delete, new note).
 | `notes:read`     | read notes, tree, search, attachments, templates | ✅  | ✅     | ✅    |
 | `notes:edit`     | create and save notes                         | —      | ✅     | ✅    |
 | `notes:delete`   | delete notes                                  | —      | ✅     | ✅    |
-| `history:read`   | view note history, diffs and the trash        | —      | ✅     | ✅    |
+| `history:read`   | view note history and diffs                   | —      | ✅     | ✅    |
+| `trash:read`     | list the trash                                | —      | ✅     | ✅    |
+| `trash:purge`    | remove entries from the trash                 | —      | —      | ✅    |
 | `files:upload`   | upload attachments                            | —      | ✅     | ✅    |
 | `settings:write` | settings UI: users, groups, ACL, SSO          | —      | —      | ✅    |
 
@@ -66,11 +68,28 @@ a request lacking a permission is `403 {"error":"missing permission: …"}`.
 | GET    | `/api/attachment/{path}` | `notes:read`   | Raw file (images, PDF, audio, video; supports Range) |
 | POST   | `/api/upload`            | `files:upload` | multipart `file` (+ optional `folder`) → `{path}` |
 
+## History & trash
+
+| Method | Path                     | Permission     | Description                                   |
+| ------ | ------------------------ | -------------- | --------------------------------------------- |
+| GET    | `/api/history/{path}?limit=` | `history:read` | Revisions, newest first (`sourceRev` marks what a restore was taken from) |
+| GET    | `/api/diff/{path}?rev=` or `?from=&to=` | `history:read` | Line diff: what `rev` changed, or between two revisions |
+| POST   | `/api/restore/{path}`    | `notes:edit`   | `{rev}` → `{status: "restored"}`, or `{status: "unchanged"}` when the content already matches |
+| GET    | `/api/trash?limit=`      | `trash:read`   | Deleted notes (`restoreRev`, `deleteRev`), filtered by the caller's folder ACL |
+| POST   | `/api/trash/restore`     | `notes:edit`   | `{path}` — restore from trash (needs write access to the path) |
+| POST   | `/api/trash/purge`       | `trash:purge`  | `{path}` — remove the entry from the trash (needs write access; content stays in git history) |
+| POST   | `/api/trash/purge-all`   | `trash:purge`  | Remove every entry the caller can see in their trash |
+
+Restore commits carry a `Restored-From: <rev>` trailer; the trash is an
+explicit index in `.git/obsidianweb-trash.json` maintained on every
+delete/restore, so entries never age out (see ADR-0005). Purging only
+hides the entry — the note's content remains reachable through history.
+
 ## Settings & meta
 
 | Method | Path                    | Permission       | Description                             |
 | ------ | ----------------------- | ---------------- | --------------------------------------- |
-| GET    | `/api/settings`         | `notes:read`     | Note rules + vault dirs                 |
+| GET    | `/api/settings`         | `notes:read`     | Note rules + vault dirs + history `{enabled, mode}` |
 | PUT    | `/api/settings`         | `settings:write` | `{notes: NoteRules}` — persisted to config |
 | GET    | `/api/health`           | —                | Liveness                                |
 | GET    | `/api/obsidian/plugins` | `notes:read`     | Installed Obsidian community plugins    |

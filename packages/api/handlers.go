@@ -468,6 +468,10 @@ func (s *Server) handleRestore(c *gin.Context) {
 		return
 	}
 	if err := s.Notes.RestoreNote(actor(c), pathParam(c), req.Rev); err != nil {
+		if errors.Is(err, core.ErrRestoreUnchanged) {
+			c.JSON(http.StatusOK, gin.H{"status": "unchanged"})
+			return
+		}
 		s.internalError(c, err)
 		return
 	}
@@ -508,6 +512,10 @@ func (s *Server) handleTrashRestore(c *gin.Context) {
 		return
 	}
 	if err := s.Notes.RestoreDeleted(actor(c), req.Path); err != nil {
+		if errors.Is(err, core.ErrRestoreUnchanged) {
+			c.JSON(http.StatusOK, gin.H{"status": "unchanged"})
+			return
+		}
 		s.internalError(c, err)
 		return
 	}
@@ -522,6 +530,12 @@ func (s *Server) handleTrashPurge(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
 		return
 	}
+	// Symmetric with restore: taking an entry out of someone else's
+	// trash requires write access to the path.
+	if s.aclAccess(c, req.Path) < acl.AccessWrite {
+		c.JSON(http.StatusForbidden, gin.H{"error": "read-only access"})
+		return
+	}
 	if err := s.Notes.PurgeTrash([]string{req.Path}); err != nil {
 		s.internalError(c, err)
 		return
@@ -530,14 +544,20 @@ func (s *Server) handleTrashPurge(c *gin.Context) {
 }
 
 func (s *Server) handleTrashPurgeAll(c *gin.Context) {
+	// Trash(0) is the full list — a page-sized limit here would leave
+	// older entries behind. Only entries the caller can see in their own
+	// trash view (allowRead) are cleared.
 	deleted, err := s.Notes.Trash(0)
 	if err != nil {
 		s.internalError(c, err)
 		return
 	}
-	paths := make([]string, len(deleted))
-	for i, d := range deleted {
-		paths[i] = d.Path
+	allow := s.allowRead(c)
+	var paths []string
+	for _, d := range deleted {
+		if allow == nil || allow(d.Path) {
+			paths = append(paths, d.Path)
+		}
 	}
 	if err := s.Notes.PurgeTrash(paths); err != nil {
 		s.internalError(c, err)
@@ -546,13 +566,19 @@ func (s *Server) handleTrashPurgeAll(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "purged"})
 }
 
-// Settings API exposes only the runtime-editable subset (note rules).
+// Settings API exposes only the runtime-editable subset (note rules)
+// plus read-only facts the UI needs (history availability, so deletion
+// warns when nothing lands in the trash).
 func (s *Server) handleGetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"notes": s.Notes.Rules(),
 		"vault": gin.H{
 			"templatesDir":   s.Config.Vault.TemplatesDir,
 			"attachmentsDir": s.Config.Vault.AttachmentsDir,
+		},
+		"history": gin.H{
+			"enabled": s.Notes.History() != nil,
+			"mode":    s.Config.History.Mode,
 		},
 	})
 }

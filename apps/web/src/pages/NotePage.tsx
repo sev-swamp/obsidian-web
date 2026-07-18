@@ -55,6 +55,22 @@ export function NotePage() {
   const canDelete = can('notes:delete') && note?.access !== 'read'
   const canHistory = can('history:read')
 
+  // With history disabled or managed externally nothing lands in the
+  // trash — deletion must warn that it is unrecoverable.
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.settings,
+    enabled: canDelete,
+    staleTime: 60_000,
+  })
+  const deleteWarning = !settings
+    ? undefined
+    : !settings.history.enabled
+      ? t('deleteNoHistoryWarning')
+      : settings.history.mode === 'external'
+        ? t('deleteExternalHistoryWarning')
+        : undefined
+
   const canonicalPath = note?.path
 
   useEffect(() => {
@@ -259,6 +275,7 @@ export function NotePage() {
                   onClick={() =>
                     void confirm({
                       title: `${t('deleteConfirm')} "${note.title}"?`,
+                      message: deleteWarning,
                       confirmLabel: t('delete'),
                       danger: true,
                     }).then((ok) => ok && remove.mutate())

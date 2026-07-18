@@ -78,7 +78,7 @@ export const api = {
       `/api/diff/${encodePath(path)}?rev=${encodeURIComponent(rev)}`,
     ),
   restore: (path: string, rev: string) =>
-    request<{ status: string }>(`/api/restore/${encodePath(path)}`, {
+    request<{ status: 'restored' | 'unchanged' }>(`/api/restore/${encodePath(path)}`, {
       method: 'POST',
       body: JSON.stringify({ rev }),
     }),

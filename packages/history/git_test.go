@@ -33,15 +33,15 @@ func TestRecordLogAndFileAt(t *testing.T) {
 	root, g := newVault(t)
 
 	write(t, root, "Note.md", "v2")
-	if err := g.Record("igor", "Note.md", "save"); err != nil {
+	if err := g.Record("igor", "Note.md", "save", ""); err != nil {
 		t.Fatal(err)
 	}
 	write(t, root, "Note.md", "v3")
-	if err := g.Record("sev", "Note.md", "save"); err != nil {
+	if err := g.Record("sev", "Note.md", "save", ""); err != nil {
 		t.Fatal(err)
 	}
 	// No change → no new revision.
-	if err := g.Record("sev", "Note.md", "save"); err != nil {
+	if err := g.Record("sev", "Note.md", "save", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -77,13 +77,13 @@ func TestDeletedAndRestoreRev(t *testing.T) {
 	root, g := newVault(t)
 
 	write(t, root, "Gone.md", "precious")
-	if err := g.Record("igor", "Gone.md", "create"); err != nil {
+	if err := g.Record("igor", "Gone.md", "create", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(root, "Gone.md")); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Record("igor", "Gone.md", "delete"); err != nil {
+	if err := g.Record("igor", "Gone.md", "delete", ""); err != nil {
 		t.Fatal(err)
 	}
 

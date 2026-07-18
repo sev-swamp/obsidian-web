@@ -12,6 +12,9 @@ type Revision struct {
 	Action  string    `json:"action"` // save | create | delete | restore | external | init
 	Message string    `json:"message"`
 	Time    time.Time `json:"time"`
+	// SourceRev is the revision a restore was taken from (restore
+	// revisions only).
+	SourceRev string `json:"sourceRev,omitempty"`
 }
 
 // DeletedFile is a trash entry: a note removed from the vault that can
@@ -21,13 +24,16 @@ type DeletedFile struct {
 	Actor      string    `json:"actor"`
 	Time       time.Time `json:"time"`
 	RestoreRev string    `json:"restoreRev"` // revision holding the last content
+	DeleteRev  string    `json:"deleteRev"`  // revision that removed the file
 }
 
 // History records and serves per-file change history. Implementations
 // must be safe for concurrent use. A nil History disables the feature.
 type History interface {
-	// Record captures the current state of path as a revision.
-	Record(actor, path, action string) error
+	// Record captures the current state of path as a revision. detail
+	// carries action-specific context (the source revision for
+	// "restore"); empty for ordinary actions.
+	Record(actor, path, action, detail string) error
 	// Log lists revisions of a file, newest first.
 	Log(path string, limit int) ([]Revision, error)
 	// FileAt returns the file content at a revision.
@@ -44,6 +50,12 @@ type History interface {
 	// they no longer appear in Deleted results. An empty slice is a no-op.
 	PurgeDeleted(paths []string) error
 }
+
+// ErrRestoreUnchanged is returned by RestoreNote when the current
+// content already matches the requested revision, so nothing was
+// written. The API reports it as {status: "unchanged"} instead of
+// silently answering "restored".
+var ErrRestoreUnchanged = fmt.Errorf("content already matches the revision")
 
 // ConflictError is returned by SaveNote when the note changed since the
 // client loaded it (optimistic locking).
