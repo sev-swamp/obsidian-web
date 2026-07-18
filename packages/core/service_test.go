@@ -21,6 +21,14 @@ func (nopRenderer) Render(_ string, src []byte) (string, map[string]any, error) 
 	return string(src), nil, nil
 }
 
+type captureTemplate struct{ vars map[string]string }
+
+func (t *captureTemplate) List() ([]string, error) { return nil, nil }
+func (t *captureTemplate) Render(_ string, vars map[string]string) (string, error) {
+	t.vars = vars
+	return "template", nil
+}
+
 func newService(t *testing.T, rules core.NoteRules, withHistory bool) *core.NoteService {
 	svc, _ := newServiceWithRoot(t, rules, withHistory)
 	return svc
@@ -76,6 +84,23 @@ func TestSaveNoteConflict(t *testing.T) {
 	// Saving with the fresh hash succeeds.
 	if err := svc.SaveNote("igor", "Note", "mine", conflict.CurrentHash); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateNoteTemplateCurrentUser(t *testing.T) {
+	vault, err := filesystem.NewVault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := &captureTemplate{}
+	svc := core.NewNoteService(vault, nopRenderer{}, links.NewIndex(), search.NewIndex(), tpl, core.NewEventBus(), core.NoteRules{}, nil)
+	if _, err := svc.CreateNote("igor", core.CreateNoteRequest{
+		Title: "Authored", Template: "daily", Variables: map[string]string{"currentuser": "spoofed"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if tpl.vars["currentuser"] != "igor" || tpl.vars["actor"] != "igor" {
+		t.Fatalf("actor variables = %#v", tpl.vars)
 	}
 }
 

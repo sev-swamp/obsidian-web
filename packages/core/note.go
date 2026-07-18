@@ -29,7 +29,7 @@ type Note struct {
 
 // Link is an outgoing wiki-link extracted from a note.
 type Link struct {
-	Raw      string `json:"raw"`      // link target as written: "Note", "folder/Note"
+	Raw      string `json:"raw"` // link target as written: "Note", "folder/Note"
 	Alias    string `json:"alias,omitempty"`
 	Fragment string `json:"fragment,omitempty"` // heading or ^block reference
 	Embed    bool   `json:"embed,omitempty"`
@@ -72,7 +72,18 @@ type NoteRules struct {
 	DefaultFolder   string            `yaml:"defaultFolder" json:"defaultFolder"`
 	TypeFolders     map[string]string `yaml:"typeFolders" json:"typeFolders"`
 	AutoFrontmatter bool              `yaml:"autoFrontmatter" json:"autoFrontmatter"`
+	// Properties controls which frontmatter fields are shown below a note title.
+	// An empty list keeps the properties panel hidden.
+	Properties []PropertyDefinition `yaml:"properties" json:"properties"`
 	// TrackAuthorship maintains created_by / updated_by frontmatter
 	// fields on notes saved through the platform.
 	TrackAuthorship bool `yaml:"trackAuthorship" json:"trackAuthorship"`
+}
+
+// PropertyDefinition describes one frontmatter field displayed by the UI.
+// Type is a presentation hint: text, date, datetime, list, or link.
+type PropertyDefinition struct {
+	Key   string `yaml:"key" json:"key"`
+	Label string `yaml:"label" json:"label"`
+	Type  string `yaml:"type" json:"type"`
 }

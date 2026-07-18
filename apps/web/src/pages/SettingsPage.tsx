@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { AclRule, SsoConfig } from '../api/types'
+import type { AclRule, PropertyDefinition, SsoConfig } from '../api/types'
 import { useAuthStore, type Permission } from '../store/auth'
 import { useT, type TKey } from '../i18n'
 import { SettingsIcon, BanIcon } from '../components/icons'
@@ -14,7 +14,7 @@ const btnCls =
 const primaryBtnCls =
   'rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50'
 
-type Tab = 'users' | 'roles' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso'
+type Tab = 'users' | 'roles' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso' | 'notes'
 
 const tabs: { id: Tab; label: TKey }[] = [
   { id: 'users', label: 'tabUsers' },
@@ -24,6 +24,7 @@ const tabs: { id: Tab; label: TKey }[] = [
   { id: 'tokens', label: 'tabTokens' },
   { id: 'plugins', label: 'tabPlugins' },
   { id: 'sso', label: 'tabSSO' },
+  { id: 'notes', label: 'tabNotes' },
 ]
 
 export function SettingsPage() {
@@ -60,8 +61,47 @@ export function SettingsPage() {
         {tab === 'tokens' && <TokensSection />}
         {tab === 'plugins' && <PluginsSection />}
         {tab === 'sso' && <SsoSection />}
+        {tab === 'notes' && <NotesSection />}
       </div>
     </div>
+  )
+}
+
+function NotesSection() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
+  const [properties, setProperties] = useState<PropertyDefinition[] | null>(null)
+  const displayed = properties ?? settings?.notes.properties ?? []
+  const save = useMutation({
+    mutationFn: () => api.saveSettings({ ...settings!.notes, properties: displayed }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['settings'] }),
+  })
+  const update = (index: number, patch: Partial<PropertyDefinition>) =>
+    setProperties(displayed.map((property, i) => (i === index ? { ...property, ...patch } : property)))
+
+  return (
+    <section className="max-w-2xl">
+      <h2 className="text-lg font-semibold">{t('propertiesSection')}</h2>
+      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('propertiesHint')}</p>
+      <div className="mt-4 space-y-2">
+        {displayed.map((property, index) => (
+          <div key={`${property.key}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_8rem_auto]">
+            <input className={inputCls} placeholder={t('propertyKey')} value={property.key} onChange={(e) => update(index, { key: e.target.value })} />
+            <input className={inputCls} placeholder={t('propertyLabel')} value={property.label} onChange={(e) => update(index, { label: e.target.value })} />
+            <select className={inputCls} value={property.type} onChange={(e) => update(index, { type: e.target.value as PropertyDefinition['type'] })}>
+              <option value="text">Text</option><option value="date">Date</option><option value="datetime">Date & time</option><option value="list">List</option><option value="link">Link</option>
+            </select>
+            <button type="button" className={btnCls} onClick={() => setProperties(displayed.filter((_, i) => i !== index))}>{t('removeProperty')}</button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex gap-2">
+        <button type="button" className={btnCls} onClick={() => setProperties([...displayed, { key: '', label: '', type: 'text' }])}>{t('addProperty')}</button>
+        <button type="button" className={primaryBtnCls} disabled={!settings || save.isPending || displayed.some((p) => !p.key.trim())} onClick={() => save.mutate()}>{t('save')}</button>
+      </div>
+      {save.error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{(save.error as Error).message}</p>}
+    </section>
   )
 }
 

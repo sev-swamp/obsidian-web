@@ -243,13 +243,20 @@ export const helpSections: HelpSection[] = [
   {
     id: 'frontmatter',
     title: { en: 'Frontmatter (note properties)', ru: 'Frontmatter (свойства заметки)' },
-    keywords: 'frontmatter yaml свойства метаданные title aliases алиасы шапка properties metadata',
+    keywords: 'frontmatter yaml свойства метаданные title aliases алиасы шапка properties metadata created updated author',
     entries: [
       {
         code: '---\ntitle: Title\ntags: [project]\naliases: [Other name]\n---',
         text: {
           en: 'YAML block at the very top of the file: title, tags, aliases (alternative names for [[links]])',
           ru: 'YAML-блок в самом начале файла: заголовок, теги, алиасы (альтернативные имена для [[ссылок]])',
+        },
+      },
+      {
+        code: 'created: "2026-07-18 16:00"\nauthor: Ivan',
+        text: {
+          en: 'Any YAML field can be displayed when it is enabled in Settings → Notes.',
+          ru: 'Любое YAML-поле можно показывать, включив его в «Настройки → Заметки».',
         },
       },
     ],
@@ -277,12 +284,19 @@ export const helpSections: HelpSection[] = [
           ru: 'Пользовательская переменная — значение передаётся при создании заметки через API',
         },
       },
+      {
+        code: '{{currentuser}}',
+        text: {
+          en: 'Username of the person creating the note',
+          ru: 'Имя пользователя, создающего заметку',
+        },
+      },
     ],
   },
   {
     id: 'search',
     title: { en: 'Searching notes', ru: 'Поиск по заметкам' },
-    keywords: 'search поиск фильтр tag path горячие клавиши hotkey cmd k filter',
+    keywords: 'search поиск фильтр tag path prop свойства метаданные горячие клавиши hotkey cmd k filter',
     entries: [
       {
         code: '⌘K / Ctrl+K',
@@ -300,6 +314,13 @@ export const helpSections: HelpSection[] = [
         text: {
           en: 'Search “plan” only inside the Projects folder',
           ru: 'Искать «plan» только в папке Projects',
+        },
+      },
+      {
+        code: 'prop:author=Ivan',
+        text: {
+          en: 'Search by a frontmatter property. Use prop:key:value for a partial match.',
+          ru: 'Поиск по свойству frontmatter. Для частичного совпадения: prop:ключ:значение.',
         },
       },
     ],

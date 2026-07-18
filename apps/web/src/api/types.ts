@@ -65,6 +65,13 @@ export interface NoteRules {
   defaultFolder: string
   typeFolders: Record<string, string> | null
   autoFrontmatter: boolean
+  properties?: PropertyDefinition[]
+}
+
+export interface PropertyDefinition {
+  key: string
+  label: string
+  type: 'text' | 'date' | 'datetime' | 'list' | 'link'
 }
 
 export interface Settings {

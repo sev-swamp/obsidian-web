@@ -42,7 +42,7 @@ const en = {
   deleteConfirm: 'Delete',
 
   // Search dialog
-  searchPlaceholder: 'Search notes… (supports tag:x and path:x)',
+  searchPlaceholder: 'Search notes… (tag:x, path:x, prop:key=value)',
   noResults: 'No results',
 
   // New note dialog
@@ -136,6 +136,14 @@ const en = {
   tabTokens: 'API tokens',
   tabSSO: 'SSO',
   tabPlugins: 'Plugins',
+  tabNotes: 'Notes',
+  propertiesSection: 'Displayed properties',
+  propertiesHint: 'Fields from note frontmatter shown below the title. Empty values are hidden.',
+  propertyKey: 'Property name',
+  propertyLabel: 'Label',
+  propertyType: 'Format',
+  addProperty: 'Add property',
+  removeProperty: 'Remove',
   rolesHint: 'Roles bundle permissions. The three built-in roles cannot be deleted; you can create your own. Permission changes apply the next time a user signs in.',
   roleNameLabel: 'Role name',
   roleDescriptionLabel: 'Description',
@@ -225,7 +233,7 @@ const ru: Record<TKey, string> = {
   linkedMentions: 'Обратные ссылки',
   deleteConfirm: 'Удалить',
 
-  searchPlaceholder: 'Поиск по заметкам… (поддерживает tag:x и path:x)',
+  searchPlaceholder: 'Поиск по заметкам… (tag:x, path:x, prop:ключ=значение)',
   noResults: 'Ничего не найдено',
 
   newNoteTitle: 'Новая заметка',
@@ -311,6 +319,14 @@ const ru: Record<TKey, string> = {
   tabTokens: 'API-токены',
   tabSSO: 'SSO',
   tabPlugins: 'Плагины',
+  tabNotes: 'Заметки',
+  propertiesSection: 'Отображаемые свойства',
+  propertiesHint: 'Поля frontmatter, показываемые под заголовком заметки. Пустые значения скрываются.',
+  propertyKey: 'Имя свойства',
+  propertyLabel: 'Подпись',
+  propertyType: 'Формат',
+  addProperty: 'Добавить свойство',
+  removeProperty: 'Удалить',
   rolesHint: 'Роли объединяют разрешения. Три встроенные роли нельзя удалить; можно создавать свои. Изменения разрешений применяются при следующем входе пользователя.',
   roleNameLabel: 'Название роли',
   roleDescriptionLabel: 'Описание',

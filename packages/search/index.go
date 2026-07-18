@@ -3,6 +3,7 @@
 package search
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -84,12 +85,17 @@ func (idx *Index) removeLocked(path string) {
 func (idx *Index) Search(query string, limit int) []core.SearchResult {
 	var terms []string
 	var tagFilters, pathFilters []string
+	var propertyFilters []propertyFilter
 	for _, field := range strings.Fields(strings.ToLower(query)) {
 		switch {
 		case strings.HasPrefix(field, "tag:"):
 			tagFilters = append(tagFilters, strings.TrimPrefix(field, "tag:"))
 		case strings.HasPrefix(field, "path:"):
 			pathFilters = append(pathFilters, strings.TrimPrefix(field, "path:"))
+		case strings.HasPrefix(field, "prop:"):
+			if filter, ok := parsePropertyFilter(strings.TrimPrefix(field, "prop:")); ok {
+				propertyFilters = append(propertyFilters, filter)
+			}
 		default:
 			terms = append(terms, normalizeToken(field))
 		}
@@ -100,7 +106,7 @@ func (idx *Index) Search(query string, limit int) []core.SearchResult {
 
 	scores := map[string]float64{}
 	if len(terms) == 0 {
-		if len(tagFilters) == 0 && len(pathFilters) == 0 {
+		if len(tagFilters) == 0 && len(pathFilters) == 0 && len(propertyFilters) == 0 {
 			return nil
 		}
 		for path := range idx.docs {
@@ -128,7 +134,7 @@ func (idx *Index) Search(query string, limit int) []core.SearchResult {
 	var results []core.SearchResult
 	for path, score := range scores {
 		doc := idx.docs[path]
-		if !matchesTags(doc, tagFilters) || !matchesPath(doc, pathFilters) {
+		if !matchesTags(doc, tagFilters) || !matchesPath(doc, pathFilters) || !matchesProperties(doc, propertyFilters) {
 			continue
 		}
 		results = append(results, core.SearchResult{
@@ -149,6 +155,65 @@ func (idx *Index) Search(query string, limit int) []core.SearchResult {
 		results = results[:limit]
 	}
 	return results
+}
+
+type propertyFilter struct {
+	key   string
+	value string
+	exact bool
+}
+
+// prop:key=value matches a complete value; prop:key:value matches a
+// case-insensitive substring. Values are deliberately token-sized, like the
+// existing tag: and path: filters.
+func parsePropertyFilter(raw string) (propertyFilter, bool) {
+	if key, value, ok := strings.Cut(raw, "="); ok && key != "" {
+		return propertyFilter{key: key, value: value, exact: true}, true
+	}
+	if key, value, ok := strings.Cut(raw, ":"); ok && key != "" {
+		return propertyFilter{key: key, value: value}, true
+	}
+	return propertyFilter{}, false
+}
+
+func matchesProperties(doc core.SearchDoc, filters []propertyFilter) bool {
+	for _, filter := range filters {
+		value, ok := doc.Frontmatter[filter.key]
+		if !ok {
+			return false
+		}
+		if !matchesPropertyValue(value, filter) {
+			return false
+		}
+	}
+	return true
+}
+
+func matchesPropertyValue(value any, filter propertyFilter) bool {
+	if value == nil {
+		return filter.value == ""
+	}
+	if list, ok := value.([]any); ok {
+		for _, item := range list {
+			if matchesPropertyValue(item, filter) {
+				return true
+			}
+		}
+		return false
+	}
+	if list, ok := value.([]string); ok {
+		for _, item := range list {
+			if matchesPropertyValue(item, filter) {
+				return true
+			}
+		}
+		return false
+	}
+	text := strings.ToLower(fmt.Sprint(value))
+	if filter.exact {
+		return text == filter.value
+	}
+	return strings.Contains(text, filter.value)
 }
 
 func (idx *Index) termScores(term string, prefix bool) map[string]float64 {

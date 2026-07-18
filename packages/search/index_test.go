@@ -40,3 +40,20 @@ func TestSearchRankingAndFilters(t *testing.T) {
 		t.Errorf("removed doc still found: %+v", r)
 	}
 }
+
+func TestSearchPropertyFilters(t *testing.T) {
+	idx := NewIndex()
+	idx.Index(core.SearchDoc{Path: "daily.md", Title: "Daily", Body: "entry", Frontmatter: map[string]any{
+		"created": "2026-07-18 16:00", "author": "Ivan", "tags": []any{"daily", "work"}, "empty": nil,
+	}})
+	idx.Index(core.SearchDoc{Path: "other.md", Title: "Other", Body: "entry", Frontmatter: map[string]any{"author": "Petr"}})
+
+	for _, query := range []string{"prop:author=ivan", "prop:created:2026-07", "prop:tags=daily", "prop:empty="} {
+		if r := idx.Search(query, 10); len(r) != 1 || r[0].Path != "daily.md" {
+			t.Errorf("%q: %+v", query, r)
+		}
+	}
+	if r := idx.Search("prop:author=ivan entry", 10); len(r) != 1 || r[0].Path != "daily.md" {
+		t.Errorf("combined filter: %+v", r)
+	}
+}

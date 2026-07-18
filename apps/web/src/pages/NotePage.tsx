@@ -60,7 +60,6 @@ export function NotePage() {
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.settings,
-    enabled: canDelete,
     staleTime: 60_000,
   })
   const deleteWarning = !settings
@@ -227,6 +226,10 @@ export function NotePage() {
               ))}
             </div>
           )}
+          <NoteProperties
+            frontmatter={note.frontmatter}
+            definitions={settings?.notes.properties ?? []}
+          />
         </div>
         <div className="flex shrink-0 gap-2">
           {editing ? (
@@ -383,4 +386,36 @@ export function NotePage() {
       )}
     </article>
   )
+}
+
+function NoteProperties({
+  frontmatter,
+  definitions,
+}: {
+  frontmatter?: Record<string, unknown>
+  definitions: { key: string; label: string; type: string }[]
+}) {
+  const values = definitions.flatMap((definition) => {
+    const value = frontmatter?.[definition.key]
+    if (value === undefined || value === null || value === '') return []
+    return [{ ...definition, value }]
+  })
+  if (values.length === 0) return null
+
+  return (
+    <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+      {values.map((property) => (
+        <div key={property.key} className="contents">
+          <dt className="text-gray-500 dark:text-gray-400">{property.label || property.key}</dt>
+          <dd className="min-w-0 break-words">{formatPropertyValue(property.value, property.type)}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function formatPropertyValue(value: unknown, type: string): string {
+  if (Array.isArray(value)) return value.map(String).join(', ')
+  if (type === 'date' && typeof value === 'string') return value.slice(0, 10)
+  return String(value)
 }

@@ -115,6 +115,11 @@ export const api = {
   recent: (limit = 10) => request<NoteMeta[]>(`/api/recent?limit=${limit}`),
   templates: () => request<string[]>('/api/templates'),
   settings: () => request<Settings>('/api/settings'),
+  saveSettings: (notes: Settings['notes']) =>
+    request<{ notes: Settings['notes'] }>('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ notes }),
+    }),
   authStatus: () => request<{ authEnabled: boolean }>('/api/auth/status'),
   // Admin: user & ACL management
   adminUsers: () => request<{ users: AdminUser[]; groups: string[] }>('/api/admin/users'),

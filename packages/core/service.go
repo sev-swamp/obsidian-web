@@ -253,8 +253,14 @@ func (s *NoteService) CreateNote(actor string, req CreateNoteRequest) (string, e
 
 	content := req.Content
 	if req.Template != "" && s.templates != nil {
-		vars := map[string]string{"title": title, "filename": name}
+		// currentuser comes from the authenticated actor, never from request
+		// variables, so callers cannot attribute a newly created note to someone
+		// else. actor is kept as a short alias for API/template compatibility.
+		vars := map[string]string{"title": title, "filename": name, "currentuser": actor, "actor": actor}
 		for k, v := range req.Variables {
+			if k == "currentuser" || k == "actor" {
+				continue
+			}
 			vars[k] = v
 		}
 		rendered, err := s.templates.Render(req.Template, vars)

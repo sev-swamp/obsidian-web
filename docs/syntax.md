@@ -144,8 +144,13 @@ or in frontmatter: `tags: [project, idea]`.
 title: Display title
 tags: [project]
 aliases: [Other name]
+created: "2026-07-18 16:00"
+author: Ivan
 ---
 ```
+
+Any property can be shown below the note title after it is configured in
+**Settings → Notes**. Empty properties are not shown.
 
 ## Template variables
 
@@ -158,6 +163,7 @@ aliases: [Other name]
 | `{{datetime}}`        | ISO timestamp                  |
 | `{{date:YYYY-MM-DD}}` | custom format (YYYY MM DD HH mm ss) |
 | `{{anything}}`        | custom variable passed via API |
+| `{{currentuser}}`     | username of the note creator   |
 
 ## Search operators
 
@@ -166,3 +172,5 @@ aliases: [Other name]
 | `word1 word2`       | notes containing both words            |
 | `tag:project report`| "report" only in notes tagged project  |
 | `path:Projects plan`| "plan" only under the Projects folder  |
+| `prop:author=Ivan`  | exact frontmatter property match       |
+| `prop:created:2026-07` | partial frontmatter property match  |

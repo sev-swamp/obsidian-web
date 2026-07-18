@@ -48,7 +48,8 @@ func (e *Engine) List() ([]string, error) {
 var varRe = regexp.MustCompile(`\{\{\s*([\w-]+)(?::([^}]+))?\s*\}\}`)
 
 // Render loads a template and substitutes variables. Built-ins: date,
-// time, datetime, title, filename; anything else comes from vars.
+// time, datetime, title, filename, currentuser and actor; anything else
+// comes from vars. The last two are supplied by NoteService on creation.
 func (e *Engine) Render(name string, vars map[string]string) (string, error) {
 	data, err := e.fs.Read(e.dir + "/" + name + ".md")
 	if err != nil {
