@@ -59,6 +59,10 @@ type UserRecord struct {
 	Groups       []string      `yaml:"groups,omitempty" json:"groups"`
 	TokenVersion int           `yaml:"tokenVersion,omitempty" json:"tokenVersion"`
 	Tokens       []TokenRecord `yaml:"tokens,omitempty" json:"tokens,omitempty"`
+	// OIDCSubject links the account to an SSO identity by the provider's
+	// immutable subject claim. Set on provisioning/first link; SSO logins
+	// match by it, never by (user-editable) username claims.
+	OIDCSubject string `yaml:"oidcSubject,omitempty" json:"oidcSubject,omitempty"`
 }
 
 // TokenRecord is metadata of an issued personal API token (the JWT
@@ -264,6 +268,21 @@ func (s *Store) User(username string) (UserRecord, bool) {
 	return *u, true
 }
 
+// UserBySubject finds the account linked to an OIDC subject.
+func (s *Store) UserBySubject(subject string) (UserRecord, bool) {
+	if subject == "" {
+		return UserRecord{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, name := range s.order {
+		if u := s.users[name]; u.OIDCSubject == subject {
+			return *u, true
+		}
+	}
+	return UserRecord{}, false
+}
+
 // Users lists records in stable order (secrets stripped by json tags).
 func (s *Store) Users() []UserRecord {
 	s.mu.RLock()
@@ -282,6 +301,9 @@ func (s *Store) UpsertUser(u UserRecord) error {
 		if u.PasswordHash == "" {
 			u.PasswordHash = existing.PasswordHash
 			u.Password = existing.Password
+		}
+		if u.OIDCSubject == "" {
+			u.OIDCSubject = existing.OIDCSubject
 		}
 		u.TokenVersion = existing.TokenVersion
 		u.Tokens = existing.Tokens

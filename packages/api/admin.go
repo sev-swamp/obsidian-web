@@ -14,6 +14,13 @@ import (
 	"github.com/obsidianweb/obsidianweb/packages/core"
 )
 
+// audit logs a security-relevant state change with the acting user, so
+// account/ACL/role modifications are traceable after the fact.
+func (s *Server) audit(c *gin.Context, action string, kv ...any) {
+	args := append([]any{"actor", actor(c), "action", action}, kv...)
+	s.Log.Info("audit", args...)
+}
+
 // aclOr503 guards admin endpoints that need the users.yaml store.
 func (s *Server) aclOr503(c *gin.Context) *acl.Store {
 	if s.ACL == nil {
@@ -63,14 +70,15 @@ func (s *Server) handleAdminCreateUser(c *gin.Context) {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	rec := acl.UserRecord{Username: req.Username, PasswordHash: string(hash), Role: req.Role, Groups: req.Groups}
 	if err := store.UpsertUser(rec); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
+	s.audit(c, "user.create", "username", req.Username, "role", req.Role)
 	c.JSON(http.StatusCreated, rec)
 }
 
@@ -110,9 +118,10 @@ func (s *Server) handleAdminUpdateUser(c *gin.Context) {
 		rec.Password = ""
 	}
 	if err := store.UpsertUser(rec); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
+	s.audit(c, "user.update", "username", name, "role", rec.Role, "passwordChanged", req.Password != "")
 	c.JSON(http.StatusOK, rec)
 }
 
@@ -130,6 +139,7 @@ func (s *Server) handleAdminDeleteUser(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	s.audit(c, "user.delete", "username", name)
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
@@ -145,6 +155,7 @@ func (s *Server) handleAdminRevoke(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	s.audit(c, "user.revoke-sessions", "username", c.Param("name"))
 	c.JSON(http.StatusOK, gin.H{"tokenVersion": v})
 }
 
@@ -174,6 +185,7 @@ func (s *Server) handleAdminPutACL(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	s.audit(c, "acl.update", "rules", len(req.Rules))
 	c.JSON(http.StatusOK, gin.H{"rules": store.Rules()})
 }
 
@@ -295,6 +307,7 @@ func (s *Server) handleAdminAddGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	s.audit(c, "group.create", "group", req.Name)
 	c.JSON(http.StatusCreated, gin.H{"groups": store.Groups()})
 }
 
@@ -304,9 +317,10 @@ func (s *Server) handleAdminDeleteGroup(c *gin.Context) {
 		return
 	}
 	if err := store.DeleteGroup(c.Param("name")); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
+	s.audit(c, "group.delete", "group", c.Param("name"))
 	c.JSON(http.StatusOK, gin.H{"groups": store.Groups()})
 }
 
@@ -344,6 +358,7 @@ func (s *Server) handleAdminPutSSO(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	s.audit(c, "sso.update", "enabled", req.SSO.Enabled, "issuer", req.SSO.Issuer)
 	cfg := store.SSO()
 	cfg.ClientSecret = ""
 	c.JSON(http.StatusOK, gin.H{"sso": cfg})
@@ -397,9 +412,10 @@ func (s *Server) handleAdminCreateRole(c *gin.Context) {
 	}
 	rec := acl.RoleRecord{Name: req.Name, Description: req.Description, Permissions: req.Permissions}
 	if err := store.UpsertRole(rec); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
+	s.audit(c, "role.create", "role", req.Name, "permissions", req.Permissions)
 	c.JSON(http.StatusCreated, rec)
 }
 
@@ -424,9 +440,10 @@ func (s *Server) handleAdminUpdateRole(c *gin.Context) {
 	}
 	rec := acl.RoleRecord{Name: name, Description: req.Description, Permissions: req.Permissions}
 	if err := store.UpsertRole(rec); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
+	s.audit(c, "role.update", "role", name, "permissions", req.Permissions)
 	c.JSON(http.StatusOK, rec)
 }
 
@@ -439,6 +456,7 @@ func (s *Server) handleAdminDeleteRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	s.audit(c, "role.delete", "role", c.Param("name"))
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
@@ -489,9 +507,10 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 		return
 	}
 	if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
+	s.audit(c, "plugin.toggle", "plugin", id, "enabled", *req.Enabled)
 	if s.Bus != nil {
 		s.Bus.Publish(core.Event{Type: core.EventPluginChanged, Actor: actor(c)})
 	}
@@ -566,7 +585,7 @@ func (s *Server) handleCreateToken(c *gin.Context) {
 
 	jtiBytes := make([]byte, 16)
 	if _, err := rand.Read(jtiBytes); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	jti := hex.EncodeToString(jtiBytes)
@@ -582,7 +601,7 @@ func (s *Server) handleCreateToken(c *gin.Context) {
 	user := auth.User{Username: rec.Username, Role: rec.Role}
 	token, _, err := s.Auth.IssueAPIToken(user, rec.TokenVersion, jti, perms, ttl)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	record := acl.TokenRecord{
@@ -593,9 +612,10 @@ func (s *Server) handleCreateToken(c *gin.Context) {
 		ExpiresAt:   expiresAt,
 	}
 	if err := store.AddToken(rec.Username, record); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
+	s.audit(c, "token.create", "name", req.Name, "id", jti, "permissions", perms)
 	// The token itself is shown exactly once and never stored.
 	c.JSON(http.StatusCreated, gin.H{"token": token, "record": record})
 }
@@ -609,6 +629,7 @@ func (s *Server) handleRevokeToken(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+	s.audit(c, "token.revoke", "id", c.Param("id"))
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
 

@@ -34,6 +34,8 @@ type Server struct {
 	// WebFS is the embedded (or on-disk) frontend; nil means API-only.
 	WebFS fs.FS
 	Log   *slog.Logger
+
+	loginLimits *loginLimiter
 }
 
 // aclAccess resolves the caller's folder-level access to a vault path.
@@ -58,6 +60,9 @@ func (s *Server) allowRead(c *gin.Context) core.AllowFunc {
 // Router builds the gin engine with all routes attached.
 func (s *Server) Router() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
+	if s.loginLimits == nil {
+		s.loginLimits = newLoginLimiter(10, 15*time.Minute)
+	}
 	r := gin.New()
 	r.Use(gin.Recovery(), s.requestLogger())
 	if s.Config.Server.DevCORS {
@@ -83,12 +88,15 @@ func (s *Server) Router() *gin.Engine {
 		read.GET("/search", s.handleSearch)
 		read.GET("/recent", s.handleRecent)
 		read.GET("/templates", s.handleTemplates)
-		read.GET("/attachment/*path", s.handleAttachment)
 		read.GET("/settings", s.handleGetSettings)
 		read.GET("/obsidian/plugins", s.handleObsidianPlugins)
 		read.GET("/plugins", s.handleListPlugins)
 		read.GET("/access/*path", s.handleAccess)
 	}
+
+	// Attachments are loaded by media elements (<img>, <video>) that
+	// cannot send headers, so this route alone accepts ?token=.
+	r.GET("/api/attachment/*path", s.requirePermissionQueryOK(auth.PermNotesRead), s.handleAttachment)
 
 	// History viewing has its own permission (history:read).
 	hist := r.Group("/api", s.requirePermission(auth.PermHistory))
@@ -230,8 +238,21 @@ func devCORS() gin.HandlerFunc {
 }
 
 // requirePermission validates the JWT (when auth is enabled) and checks
-// the permission set embedded in the token.
+// the permission set embedded in the token. Only the Authorization
+// header is accepted; see requirePermissionQueryOK for the exceptions.
 func (s *Server) requirePermission(perm string) gin.HandlerFunc {
+	return s.requireWith(perm, false)
+}
+
+// requirePermissionQueryOK additionally accepts ?token=. Reserved for
+// endpoints loaded by media elements (<img>, <video>), which cannot set
+// headers; everywhere else query tokens would leak into proxy logs and
+// browser history.
+func (s *Server) requirePermissionQueryOK(perm string) gin.HandlerFunc {
+	return s.requireWith(perm, true)
+}
+
+func (s *Server) requireWith(perm string, allowQueryToken bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !s.Auth.Enabled {
 			c.Next()
@@ -240,8 +261,10 @@ func (s *Server) requirePermission(perm string) gin.HandlerFunc {
 		header := c.GetHeader("Authorization")
 		tokenString := strings.TrimPrefix(header, "Bearer ")
 		if tokenString == "" || tokenString == header {
-			// Allow ?token= for WebSocket and media elements.
-			tokenString = c.Query("token")
+			tokenString = ""
+			if allowQueryToken {
+				tokenString = c.Query("token")
+			}
 		}
 		if tokenString == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})

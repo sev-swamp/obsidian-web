@@ -68,6 +68,11 @@ func Open(root, mode string, log *slog.Logger) (*Git, error) {
 }
 
 // Record captures the current state of path as a commit.
+//
+// It deliberately avoids go-git's Worktree.Status(), which hashes the
+// entire worktree on every call (O(vault size) per save, all under
+// g.mu). Instead the on-disk blob is compared against HEAD directly and
+// staging uses SkipStatus.
 func (g *Git) Record(actor, path, action string) error {
 	if g.mode != ModeManaged {
 		return nil // external repositories are read-only for us
@@ -79,27 +84,50 @@ func (g *Git) Record(actor, path, action string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := w.Add(path); err != nil {
-		// Deleted files: modern go-git stages deletions via Add, older
-		// versions need Remove. Try both before giving up.
-		if _, rmErr := w.Remove(path); rmErr != nil {
+	data, readErr := os.ReadFile(filepath.Join(g.root, filepath.FromSlash(path)))
+	exists := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	headHash, inHead := g.headBlobHash(path)
+	switch {
+	case !exists && !inHead:
+		return nil // never committed and already gone
+	case exists && inHead && plumbing.ComputeHash(plumbing.BlobObject, data) == headHash:
+		return nil // unchanged since the last commit
+	}
+	if exists {
+		if err := w.AddWithOptions(&git.AddOptions{Path: path, SkipStatus: true}); err != nil {
 			return fmt.Errorf("stage %s: %w", path, err)
 		}
-	}
-	status, err := w.Status()
-	if err != nil {
-		return err
-	}
-	// A clean file is absent from the status map (Status.File would
-	// fabricate an Untracked entry) — skip to avoid empty commits.
-	fs, changed := status[path]
-	if !changed || (fs.Staging == git.Unmodified && fs.Worktree == git.Unmodified) {
-		return nil
+	} else if _, err := w.Remove(path); err != nil {
+		return fmt.Errorf("stage delete %s: %w", path, err)
 	}
 	_, err = w.Commit(fmt.Sprintf("%s: %s", action, path), &git.CommitOptions{
 		Author: signature(actor),
 	})
 	return err
+}
+
+// headBlobHash returns the blob hash of path in the HEAD commit.
+func (g *Git) headBlobHash(path string) (plumbing.Hash, bool) {
+	ref, err := g.repo.Head()
+	if err != nil {
+		return plumbing.ZeroHash, false
+	}
+	commit, err := g.repo.CommitObject(ref.Hash())
+	if err != nil {
+		return plumbing.ZeroHash, false
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return plumbing.ZeroHash, false
+	}
+	entry, err := tree.FindEntry(path)
+	if err != nil {
+		return plumbing.ZeroHash, false
+	}
+	return entry.Hash, true
 }
 
 // commitAll snapshots the whole worktree (used for the initial commit).
@@ -225,8 +253,11 @@ func (g *Git) Deleted(limit int) ([]core.DeletedFile, error) {
 		return nil, err
 	}
 	defer iter.Close()
+	// limit <= 0 means "everything reachable": capping it at a page size
+	// here would make purge-all silently miss older entries. The walk is
+	// still bounded by maxWalk.
 	if limit <= 0 {
-		limit = 100
+		limit = int(^uint(0) >> 1)
 	}
 	g.mu.Lock()
 	purged := g.loadPurged()

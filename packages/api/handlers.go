@@ -5,7 +5,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -19,6 +18,18 @@ import (
 
 func pathParam(c *gin.Context) string {
 	return strings.TrimPrefix(c.Param("path"), "/")
+}
+
+// internalError logs the failure with its details and answers with an
+// opaque 500: raw error strings expose internal paths and library
+// internals to clients.
+func (s *Server) internalError(c *gin.Context, err error) {
+	s.Log.Error("request failed",
+		"method", c.Request.Method,
+		"path", c.Request.URL.Path,
+		"error", err,
+	)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 }
 
 // actor returns the authenticated username ("" when auth is disabled).
@@ -41,7 +52,7 @@ func limitParam(c *gin.Context, def int) int {
 func (s *Server) handleListNotes(c *gin.Context) {
 	notes, err := s.Notes.ListNotes(s.allowRead(c))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, notes)
@@ -56,11 +67,11 @@ func (s *Server) handleGetNote(c *gin.Context) {
 	}
 	note, err := s.Notes.GetNote(p, s.allowRead(c))
 	if err != nil {
-		status := http.StatusInternalServerError
-		if os.IsNotExist(err) {
-			status = http.StatusNotFound
+		if errors.Is(err, core.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	if access >= acl.AccessWrite {
@@ -79,7 +90,11 @@ func (s *Server) handleRawNote(c *gin.Context) {
 	}
 	data, err := s.Vault.Read(p)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		if errors.Is(err, core.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		s.internalError(c, err)
 		return
 	}
 	c.Data(http.StatusOK, "text/markdown; charset=utf-8", data)
@@ -111,7 +126,7 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 	}
 	note, err := s.Notes.GetNote(p, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, note)
@@ -187,7 +202,7 @@ func (s *Server) handleSaveNote(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "saved"})
@@ -203,11 +218,11 @@ func (s *Server) handleDeleteNote(c *gin.Context) {
 		return
 	}
 	if err := s.Notes.DeleteNote(actor(c), pathParam(c)); err != nil {
-		status := http.StatusInternalServerError
-		if os.IsNotExist(err) {
-			status = http.StatusNotFound
+		if errors.Is(err, core.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
@@ -216,7 +231,7 @@ func (s *Server) handleDeleteNote(c *gin.Context) {
 func (s *Server) handleTree(c *gin.Context) {
 	tree, err := s.Notes.Tree()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	if allow := s.allowRead(c); allow != nil {
@@ -254,7 +269,7 @@ func (s *Server) handleSearch(c *gin.Context) {
 func (s *Server) handleRecent(c *gin.Context) {
 	notes, err := s.Notes.Recent(limitParam(c, 10), s.allowRead(c))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, notes)
@@ -263,13 +278,33 @@ func (s *Server) handleRecent(c *gin.Context) {
 func (s *Server) handleTemplates(c *gin.Context) {
 	names, err := s.Notes.Templates()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	if names == nil {
 		names = []string{}
 	}
 	c.JSON(http.StatusOK, names)
+}
+
+// inlineSafe reports whether a MIME type may render inline in the
+// browser. Everything else is forced to download: an uploaded .html or
+// .svg served inline would execute scripts in the app's origin (stored
+// XSS). Embedding via <img>/<audio>/<video> ignores Content-Disposition,
+// so media in notes keeps working either way.
+func inlineSafe(ct string) bool {
+	if ct == "image/svg+xml" {
+		return false // SVG can carry scripts
+	}
+	switch {
+	case strings.HasPrefix(ct, "image/"),
+		strings.HasPrefix(ct, "audio/"),
+		strings.HasPrefix(ct, "video/"),
+		ct == "application/pdf",
+		strings.HasPrefix(ct, "text/plain"):
+		return true
+	}
+	return false
 }
 
 // handleAttachment streams a vault file (image, PDF, audio, video) with
@@ -284,16 +319,43 @@ func (s *Server) handleAttachment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if ct := mime.TypeByExtension(path.Ext(abs)); ct != "" {
+	ct := mime.TypeByExtension(path.Ext(abs))
+	if ct != "" {
 		c.Header("Content-Type", ct)
+	}
+	c.Header("X-Content-Type-Options", "nosniff")
+	if !inlineSafe(ct) {
+		c.Header("Content-Disposition", "attachment")
 	}
 	c.File(abs)
 }
 
+// maxUploadBytes bounds a single upload (the file is buffered in memory).
+const maxUploadBytes = 100 << 20 // 100 MiB
+
+// blockedUploadExt rejects extensions that browsers execute as active
+// content; defense in depth on top of the Content-Disposition policy.
+var blockedUploadExt = map[string]bool{
+	".html": true, ".htm": true, ".xhtml": true, ".svg": true, ".xml": true,
+	".js": true, ".mjs": true,
+}
+
 func (s *Server) handleUpload(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadBytes)
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file field is required"})
+		status := http.StatusBadRequest
+		msg := "file field is required"
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			status = http.StatusRequestEntityTooLarge
+			msg = "file exceeds the upload limit"
+		}
+		c.JSON(status, gin.H{"error": msg})
+		return
+	}
+	if blockedUploadExt[strings.ToLower(path.Ext(file.Filename))] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this file type cannot be uploaded"})
 		return
 	}
 	folder := strings.Trim(c.PostForm("folder"), "/")
@@ -302,13 +364,13 @@ func (s *Server) handleUpload(c *gin.Context) {
 	}
 	src, err := file.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	defer src.Close()
 	data, err := io.ReadAll(src)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	dest := path.Join(folder, path.Base(file.Filename))
@@ -317,7 +379,7 @@ func (s *Server) handleUpload(c *gin.Context) {
 		return
 	}
 	if err := s.Vault.Write(dest, data); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"path": dest})
@@ -346,7 +408,7 @@ func (s *Server) handleHistoryLog(c *gin.Context) {
 	}
 	revs, err := h.Log(p, limitParam(c, 50))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	if revs == nil {
@@ -380,7 +442,7 @@ func (s *Server) handleHistoryDiff(c *gin.Context) {
 		diff, err = h.Diff(diffPath, from, c.Query("to"))
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"diff": diff})
@@ -399,7 +461,7 @@ func (s *Server) handleRestore(c *gin.Context) {
 		return
 	}
 	if err := s.Notes.RestoreNote(actor(c), pathParam(c), req.Rev); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "restored"})
@@ -408,7 +470,7 @@ func (s *Server) handleRestore(c *gin.Context) {
 func (s *Server) handleTrash(c *gin.Context) {
 	deleted, err := s.Notes.Trash(limitParam(c, 100))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	if allow := s.allowRead(c); allow != nil {
@@ -439,7 +501,7 @@ func (s *Server) handleTrashRestore(c *gin.Context) {
 		return
 	}
 	if err := s.Notes.RestoreDeleted(actor(c), req.Path); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "restored"})
@@ -454,7 +516,7 @@ func (s *Server) handleTrashPurge(c *gin.Context) {
 		return
 	}
 	if err := s.Notes.PurgeTrash([]string{req.Path}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "purged"})
@@ -463,7 +525,7 @@ func (s *Server) handleTrashPurge(c *gin.Context) {
 func (s *Server) handleTrashPurgeAll(c *gin.Context) {
 	deleted, err := s.Notes.Trash(0)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	paths := make([]string, len(deleted))
@@ -471,7 +533,7 @@ func (s *Server) handleTrashPurgeAll(c *gin.Context) {
 		paths[i] = d.Path
 	}
 	if err := s.Notes.PurgeTrash(paths); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "purged"})
@@ -501,6 +563,7 @@ func (s *Server) handlePutSettings(c *gin.Context) {
 	if err := s.Config.Save(); err != nil {
 		s.Log.Warn("settings not persisted", "error", err)
 	}
+	s.audit(c, "settings.update")
 	c.JSON(http.StatusOK, gin.H{"notes": req.Notes})
 }
 
@@ -515,6 +578,11 @@ func (s *Server) handleLogin(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	limitKey := req.Username + "|" + c.ClientIP()
+	if !s.loginLimits.Allow(limitKey) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many failed attempts, try again later"})
 		return
 	}
 
@@ -541,16 +609,19 @@ func (s *Server) handleLogin(c *gin.Context) {
 		}
 	}
 	if !found {
+		s.loginLimits.Fail(limitKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 	if err := auth.Authenticate(user, req.Password); err != nil {
+		s.loginLimits.Fail(limitKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
+	s.loginLimits.Reset(limitKey)
 	token, claims, err := s.Auth.IssueSession(user, tokenVersion)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -572,7 +643,7 @@ func (s *Server) handleObsidianPlugins(c *gin.Context) {
 	}
 	plugins, err := s.Obsidian.CommunityPlugins()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		s.internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"available": true, "plugins": plugins})

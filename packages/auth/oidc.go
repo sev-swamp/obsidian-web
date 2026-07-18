@@ -109,5 +109,8 @@ func (o *OIDC) Exchange(code string) (Identity, error) {
 	if username == "" {
 		return Identity{}, fmt.Errorf("provider returned neither preferred_username nor email")
 	}
-	return Identity{Username: username, Email: claims.Email, Groups: claims.Groups}, nil
+	if idToken.Subject == "" {
+		return Identity{}, fmt.Errorf("provider returned no subject")
+	}
+	return Identity{Subject: idToken.Subject, Username: username, Email: claims.Email, Groups: claims.Groups}, nil
 }

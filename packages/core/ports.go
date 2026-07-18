@@ -1,6 +1,14 @@
 package core
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrNotFound is returned by adapters when a vault entry does not exist.
+// Transport layers match it with errors.Is instead of inspecting
+// implementation-specific errors (os.IsNotExist and friends).
+var ErrNotFound = errors.New("not found")
 
 // FileInfo describes a vault entry.
 type FileInfo struct {

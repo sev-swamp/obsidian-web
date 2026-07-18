@@ -60,12 +60,25 @@ func (v *Vault) Rel(abs string) (string, bool) {
 	return filepath.ToSlash(rel), true
 }
 
+// notFound translates the adapter's missing-file errors into the
+// implementation-agnostic core.ErrNotFound (keeping the original chained).
+func notFound(path string, err error) error {
+	if os.IsNotExist(err) {
+		return fmt.Errorf("%s: %w (%w)", path, core.ErrNotFound, err)
+	}
+	return err
+}
+
 func (v *Vault) Read(path string) ([]byte, error) {
 	abs, err := v.AbsPath(path)
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(abs)
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, notFound(path, err)
+	}
+	return data, nil
 }
 
 func (v *Vault) Write(path string, data []byte) error {
@@ -92,7 +105,10 @@ func (v *Vault) Delete(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.Remove(abs)
+	if err := os.Remove(abs); err != nil {
+		return notFound(path, err)
+	}
+	return nil
 }
 
 func (v *Vault) Exists(path string) bool {
@@ -111,7 +127,7 @@ func (v *Vault) Stat(path string) (core.FileInfo, error) {
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
-		return core.FileInfo{}, err
+		return core.FileInfo{}, notFound(path, err)
 	}
 	rel, _ := v.Rel(abs)
 	return fileInfo(rel, info), nil

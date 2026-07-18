@@ -115,24 +115,52 @@ func (s *Server) handleSSOCallback(c *gin.Context) {
 		return
 	}
 
-	rec, exists := s.ACL.User(identity.Username)
+	// Accounts are matched by the immutable OIDC subject, never by the
+	// username claim alone: usernames/emails are often self-editable at
+	// the IdP, and matching by them would let anyone claim an existing
+	// account (including admin) by renaming themselves.
+	rec, exists := s.ACL.UserBySubject(identity.Subject)
 	if !exists {
-		if !cfg.AutoProvision {
-			s.loginRedirectError(c, "account is not provisioned: "+identity.Username)
+		byName, nameExists := s.ACL.User(identity.Username)
+		switch {
+		case nameExists && byName.OIDCSubject != "":
+			// Linked to a different IdP identity — refuse.
+			s.Log.Warn("sso subject mismatch", "username", identity.Username, "subject", identity.Subject)
+			s.loginRedirectError(c, "account is linked to a different SSO identity")
 			return
-		}
-		role := cfg.DefaultRole
-		if !s.roleKnown(role) {
-			role = auth.RoleViewer
-		}
-		// SSO-only account: no password, sign-in works only through the
-		// provider (Authenticate rejects empty credentials).
-		rec = acl.UserRecord{Username: identity.Username, Role: role, Groups: identity.Groups}
-		if err := s.ACL.UpsertUser(rec); err != nil {
-			s.loginRedirectError(c, "failed to provision account")
+		case nameExists && (byName.Password != "" || byName.PasswordHash != ""):
+			// Password accounts are never auto-linked: that would let an
+			// IdP user impersonate them by choosing the same username.
+			s.loginRedirectError(c, "account "+identity.Username+" uses password sign-in; ask an admin to link it to SSO")
 			return
+		case nameExists:
+			// Legacy SSO-provisioned account (no password, no subject yet):
+			// adopt the subject on first login after the upgrade.
+			byName.OIDCSubject = identity.Subject
+			if err := s.ACL.UpsertUser(byName); err != nil {
+				s.loginRedirectError(c, "failed to link account")
+				return
+			}
+			s.Log.Info("sso account linked", "username", byName.Username, "subject", identity.Subject)
+			rec = byName
+		default:
+			if !cfg.AutoProvision {
+				s.loginRedirectError(c, "account is not provisioned: "+identity.Username)
+				return
+			}
+			role := cfg.DefaultRole
+			if !s.roleKnown(role) {
+				role = auth.RoleViewer
+			}
+			// SSO-only account: no password, sign-in works only through the
+			// provider (Authenticate rejects empty credentials).
+			rec = acl.UserRecord{Username: identity.Username, Role: role, Groups: identity.Groups, OIDCSubject: identity.Subject}
+			if err := s.ACL.UpsertUser(rec); err != nil {
+				s.loginRedirectError(c, "failed to provision account")
+				return
+			}
+			s.Log.Info("sso user provisioned", "username", identity.Username, "role", role, "subject", identity.Subject)
 		}
-		s.Log.Info("sso user provisioned", "username", identity.Username, "role", role)
 	}
 	role := rec.Role
 	if role == "" {

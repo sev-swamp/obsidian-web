@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import mermaid from 'mermaid'
+import { useAuthStore } from '../store/auth'
 import { useThemeStore } from '../store/theme'
 
 declare global {
@@ -21,6 +22,18 @@ export function MarkdownView({ html }: { html: string }) {
   useEffect(() => {
     const el = ref.current
     if (!el) return
+
+    // Media elements cannot send the Authorization header, so attachment
+    // URLs get the session token appended (the only endpoint accepting it).
+    const token = useAuthStore.getState().token
+    if (token) {
+      el.querySelectorAll<HTMLElement>('img, audio, video, source').forEach((media) => {
+        const src = media.getAttribute('src')
+        if (src && src.startsWith('/api/attachment/') && !src.includes('token=')) {
+          media.setAttribute('src', `${src}?token=${encodeURIComponent(token)}`)
+        }
+      })
+    }
 
     mermaid.initialize({
       startOnLoad: false,

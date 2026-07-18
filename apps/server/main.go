@@ -144,18 +144,24 @@ func run(configPath, vaultOverride string) error {
 	}
 
 	httpServer := &http.Server{Addr: cfg.Server.Addr, Handler: server.Router()}
+	serverErr := make(chan error, 1)
 	go func() {
 		log.Info("server listening", "addr", cfg.Server.Addr, "vault", vault.Root(), "auth", cfg.Auth.Enabled)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("http server failed", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	// Graceful shutdown on SIGINT/SIGTERM.
+	// Graceful shutdown on SIGINT/SIGTERM; a failed listener (port in
+	// use…) unwinds through the same path so deferred cleanup runs.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
+	select {
+	case err := <-serverErr:
+		pluginManager.CloseAll()
+		return fmt.Errorf("http server: %w", err)
+	case <-stop:
+	}
 	log.Info("shutting down")
 	pluginManager.CloseAll()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

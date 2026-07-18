@@ -1,6 +1,9 @@
 package core
 
-import "sync"
+import (
+	"log/slog"
+	"sync"
+)
 
 // Event types published on the bus and forwarded to WebSocket clients.
 const (
@@ -50,8 +53,19 @@ func (b *memoryBus) Publish(e Event) {
 	}
 	b.mu.RUnlock()
 	for _, h := range handlers {
-		h(e)
+		safeCall(h, e)
 	}
+}
+
+// safeCall isolates subscribers: a panicking handler (e.g. a plugin)
+// must not take down the publishing request.
+func safeCall(h Handler, e Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("event handler panicked", "event", e.Type, "panic", r)
+		}
+	}()
+	h(e)
 }
 
 func (b *memoryBus) Subscribe(fn Handler) func() {

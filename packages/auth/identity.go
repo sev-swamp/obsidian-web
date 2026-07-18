@@ -2,6 +2,11 @@ package auth
 
 // Identity is what an external provider knows about a user.
 type Identity struct {
+	// Subject is the provider's immutable user id (OIDC `sub`). Account
+	// matching MUST use it: username/email claims are often user-editable
+	// at the IdP and matching by them allows impersonating existing
+	// accounts.
+	Subject  string
 	Username string
 	Email    string
 	Groups   []string

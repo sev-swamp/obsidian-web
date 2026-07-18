@@ -63,7 +63,9 @@ scripts/deploy.sh                   # deploy (needs OBSIDIANWEB_DEPLOY_HOST env)
   note-scoped endpoints use their own prefix (`/api/history/*path`).
 - goldmark splits `[!note]` across Text nodes ('[' starts a link) —
   see callouts.go transformer.
-- go-git: clean file is ABSENT from worktree Status map (Status.File
-  fabricates Untracked) — see history.Record.
+- go-git: Worktree.Status() hashes the ENTIRE worktree (O(vault) per
+  call) — history.Record avoids it by comparing the on-disk blob hash
+  against HEAD and staging with SkipStatus. Also: a clean file is
+  absent from the Status map (Status.File fabricates Untracked).
 - Deploy builds on the VPS are slow (~10 min when go.mod changed);
   always run detached (script does nohup) — a dropped SSH kills builds.

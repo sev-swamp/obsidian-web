@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sort"
 	"time"
 
@@ -24,8 +25,17 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// The API is same-origin in production and proxied in development.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	// Same-origin only: a foreign page opening a WebSocket to a local
+	// instance (auth disabled) would otherwise receive vault events.
+	// Non-browser clients send no Origin header and are allowed.
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		return err == nil && u.Host == r.Host
+	},
 }
 
 // AccessFunc restricts which vault paths a user may learn about through
