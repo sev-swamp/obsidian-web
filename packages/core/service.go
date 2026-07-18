@@ -54,6 +54,12 @@ type NoteService struct {
 
 	extMu     sync.Mutex
 	extTimers map[string]*time.Timer
+
+	// metas caches per-note metadata so listings don't walk the file
+	// system on every request. Populated by ReindexAll and kept fresh by
+	// the same code paths that maintain the search index.
+	metaMu sync.RWMutex
+	metas  map[string]NoteMeta
 }
 
 // NewNoteService wires the core service from its dependencies.
@@ -66,6 +72,7 @@ func NewNoteService(fs VaultFS, renderer Renderer, links LinkIndex, search Searc
 		templates: templates, bus: bus, rules: rules, log: log,
 		locks:     map[string]*sync.Mutex{},
 		extTimers: map[string]*time.Timer{},
+		metas:     map[string]NoteMeta{},
 	}
 }
 
@@ -211,6 +218,22 @@ func (s *NoteService) SaveNote(actor, p, content, baseHash string) error {
 
 var unsafeFilename = regexp.MustCompile(`[\\/:*?"<>|]+`)
 
+// ResolveTargetFolder returns the folder a CreateNoteRequest will land
+// in under the current rules. The API layer uses it for the pre-create
+// ACL check, so the checked folder can never diverge from the one
+// CreateNote actually writes to.
+func (s *NoteService) ResolveTargetFolder(req CreateNoteRequest) string {
+	rules := s.Rules()
+	folder := strings.Trim(req.Folder, "/")
+	if folder == "" && req.Type != "" {
+		folder = rules.TypeFolders[req.Type]
+	}
+	if folder == "" {
+		folder = rules.DefaultFolder
+	}
+	return folder
+}
+
 // CreateNote creates a note according to the configured rules and
 // optional template, returning the new vault path.
 func (s *NoteService) CreateNote(actor string, req CreateNoteRequest) (string, error) {
@@ -221,14 +244,7 @@ func (s *NoteService) CreateNote(actor string, req CreateNoteRequest) (string, e
 	name := strings.TrimSpace(unsafeFilename.ReplaceAllString(title, "-"))
 
 	rules := s.Rules()
-	folder := strings.Trim(req.Folder, "/")
-	if folder == "" && req.Type != "" {
-		folder = rules.TypeFolders[req.Type]
-	}
-	if folder == "" {
-		folder = rules.DefaultFolder
-	}
-
+	folder := s.ResolveTargetFolder(req)
 	p := path.Join(folder, name+".md")
 	p = strings.TrimPrefix(path.Clean("/"+p), "/")
 	for i := 1; s.fs.Exists(p); i++ {
@@ -300,6 +316,7 @@ func (s *NoteService) DeleteNote(actor, p string) error {
 	}
 	s.links.Remove(p)
 	s.search.Remove(p)
+	s.removeMeta(p)
 	s.record(actor, p, "delete")
 	s.bus.Publish(Event{Type: EventFileDeleted, Path: p, Actor: actor})
 	s.bus.Publish(Event{Type: EventTreeChanged, Actor: actor})
@@ -432,20 +449,22 @@ func (s *NoteService) Search(query string, limit int, allow AllowFunc) []SearchR
 	return filtered
 }
 
-// ListNotes returns metadata for every markdown note in the vault.
+// ListNotes returns metadata for every markdown note in the vault. It
+// serves from the in-memory meta cache (populated by ReindexAll, kept
+// fresh by saves and watcher events) instead of walking the file system
+// on every request.
 func (s *NoteService) ListNotes(allow AllowFunc) ([]NoteMeta, error) {
-	var out []NoteMeta
-	err := s.fs.Walk(func(info FileInfo) error {
-		if !info.IsDir && IsMarkdown(info.Path) {
-			if allow != nil && !allow(info.Path) {
-				return nil
-			}
-			out = append(out, metaFrom(info.Path, info, nil))
+	s.metaMu.RLock()
+	out := make([]NoteMeta, 0, len(s.metas))
+	for _, m := range s.metas {
+		if allow != nil && !allow(m.Path) {
+			continue
 		}
-		return nil
-	})
+		out = append(out, m)
+	}
+	s.metaMu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-	return out, err
+	return out, nil
 }
 
 // Recent returns the most recently modified notes.
@@ -490,10 +509,11 @@ func (s *NoteService) Stats() (VaultStats, error) {
 	return st, err
 }
 
-// ReindexAll rebuilds link and search indexes by walking the vault.
+// ReindexAll rebuilds link, search and meta indexes by walking the vault.
 func (s *NoteService) ReindexAll() error {
 	start := time.Now()
 	count := 0
+	seen := map[string]bool{}
 	err := s.fs.Walk(func(info FileInfo) error {
 		if info.IsDir {
 			return nil
@@ -505,12 +525,22 @@ func (s *NoteService) ReindexAll() error {
 				return nil
 			}
 			s.indexNote(info.Path, data)
+			seen[info.Path] = true
 			count++
 		} else {
 			s.links.RegisterFile(info.Path)
 		}
 		return nil
 	})
+	// Prune cache entries whose files disappeared while we weren't
+	// looking (bulk deletes, missed watcher events).
+	s.metaMu.Lock()
+	for p := range s.metas {
+		if !seen[p] {
+			delete(s.metas, p)
+		}
+	}
+	s.metaMu.Unlock()
 	s.log.Info("vault indexed", "notes", count, "duration", time.Since(start).Round(time.Millisecond))
 	s.bus.Publish(Event{Type: EventIndexUpdated})
 	return err
@@ -539,6 +569,7 @@ func (s *NoteService) HandleFSEvent(op, p string) {
 	case "remove", "rename":
 		s.links.Remove(p)
 		s.search.Remove(p)
+		s.removeMeta(p)
 		s.record(ActorExternal, p, "delete")
 		s.bus.Publish(Event{Type: EventFileDeleted, Path: p, Actor: ActorExternal})
 		s.bus.Publish(Event{Type: EventTreeChanged, Actor: ActorExternal})
@@ -565,6 +596,22 @@ func (s *NoteService) indexNote(p string, data []byte) {
 		Body:        string(body),
 		Frontmatter: fm,
 	})
+	meta := NoteMeta{Path: p, Title: title, Tags: tags, Aliases: aliases, Size: int64(len(data))}
+	if info, err := s.fs.Stat(p); err == nil {
+		meta.ModTime = info.ModTime
+		meta.Size = info.Size
+	} else {
+		meta.ModTime = time.Now()
+	}
+	s.metaMu.Lock()
+	s.metas[p] = meta
+	s.metaMu.Unlock()
+}
+
+func (s *NoteService) removeMeta(p string) {
+	s.metaMu.Lock()
+	delete(s.metas, p)
+	s.metaMu.Unlock()
 }
 
 func fmValue(fm map[string]any, key string) any {

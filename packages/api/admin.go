@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"time"
 
@@ -19,6 +20,21 @@ import (
 func (s *Server) audit(c *gin.Context, action string, kv ...any) {
 	args := append([]any{"actor", actor(c), "action", action}, kv...)
 	s.Log.Info("audit", args...)
+}
+
+// storeError maps user-store failures to HTTP. A concurrent users.yaml
+// edit is the caller's to resolve (409 → reload and retry); other errors
+// keep the handler's usual status, with 500s going through internalError
+// so details stay out of responses.
+func (s *Server) storeError(c *gin.Context, err error, fallback int) {
+	switch {
+	case errors.Is(err, acl.ErrConcurrentEdit):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case fallback == http.StatusInternalServerError:
+		s.internalError(c, err)
+	default:
+		c.JSON(fallback, gin.H{"error": err.Error()})
+	}
 }
 
 // aclOr503 guards admin endpoints that need the users.yaml store.
@@ -75,7 +91,7 @@ func (s *Server) handleAdminCreateUser(c *gin.Context) {
 	}
 	rec := acl.UserRecord{Username: req.Username, PasswordHash: string(hash), Role: req.Role, Groups: req.Groups}
 	if err := store.UpsertUser(rec); err != nil {
-		s.internalError(c, err)
+		s.storeError(c, err, http.StatusInternalServerError)
 		return
 	}
 	s.audit(c, "user.create", "username", req.Username, "role", req.Role)
@@ -118,7 +134,7 @@ func (s *Server) handleAdminUpdateUser(c *gin.Context) {
 		rec.Password = ""
 	}
 	if err := store.UpsertUser(rec); err != nil {
-		s.internalError(c, err)
+		s.storeError(c, err, http.StatusInternalServerError)
 		return
 	}
 	s.audit(c, "user.update", "username", name, "role", rec.Role, "passwordChanged", req.Password != "")
@@ -136,7 +152,7 @@ func (s *Server) handleAdminDeleteUser(c *gin.Context) {
 		return
 	}
 	if err := store.DeleteUser(name); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		s.storeError(c, err, http.StatusNotFound)
 		return
 	}
 	s.audit(c, "user.delete", "username", name)
@@ -152,7 +168,7 @@ func (s *Server) handleAdminRevoke(c *gin.Context) {
 	}
 	v, err := store.BumpTokenVersion(c.Param("name"))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		s.storeError(c, err, http.StatusNotFound)
 		return
 	}
 	s.audit(c, "user.revoke-sessions", "username", c.Param("name"))
@@ -182,7 +198,7 @@ func (s *Server) handleAdminPutACL(c *gin.Context) {
 		return
 	}
 	if err := store.SetRules(req.Rules); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.storeError(c, err, http.StatusBadRequest)
 		return
 	}
 	s.audit(c, "acl.update", "rules", len(req.Rules))
@@ -304,7 +320,7 @@ func (s *Server) handleAdminAddGroup(c *gin.Context) {
 		return
 	}
 	if err := store.AddGroup(req.Name); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.storeError(c, err, http.StatusBadRequest)
 		return
 	}
 	s.audit(c, "group.create", "group", req.Name)
@@ -317,7 +333,7 @@ func (s *Server) handleAdminDeleteGroup(c *gin.Context) {
 		return
 	}
 	if err := store.DeleteGroup(c.Param("name")); err != nil {
-		s.internalError(c, err)
+		s.storeError(c, err, http.StatusInternalServerError)
 		return
 	}
 	s.audit(c, "group.delete", "group", c.Param("name"))
@@ -355,7 +371,7 @@ func (s *Server) handleAdminPutSSO(c *gin.Context) {
 		return
 	}
 	if err := store.SetSSO(req.SSO); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.storeError(c, err, http.StatusBadRequest)
 		return
 	}
 	s.audit(c, "sso.update", "enabled", req.SSO.Enabled, "issuer", req.SSO.Issuer)
@@ -412,7 +428,7 @@ func (s *Server) handleAdminCreateRole(c *gin.Context) {
 	}
 	rec := acl.RoleRecord{Name: req.Name, Description: req.Description, Permissions: req.Permissions}
 	if err := store.UpsertRole(rec); err != nil {
-		s.internalError(c, err)
+		s.storeError(c, err, http.StatusInternalServerError)
 		return
 	}
 	s.audit(c, "role.create", "role", req.Name, "permissions", req.Permissions)
@@ -440,7 +456,7 @@ func (s *Server) handleAdminUpdateRole(c *gin.Context) {
 	}
 	rec := acl.RoleRecord{Name: name, Description: req.Description, Permissions: req.Permissions}
 	if err := store.UpsertRole(rec); err != nil {
-		s.internalError(c, err)
+		s.storeError(c, err, http.StatusInternalServerError)
 		return
 	}
 	s.audit(c, "role.update", "role", name, "permissions", req.Permissions)
@@ -453,7 +469,7 @@ func (s *Server) handleAdminDeleteRole(c *gin.Context) {
 		return
 	}
 	if err := store.DeleteRole(c.Param("name")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.storeError(c, err, http.StatusBadRequest)
 		return
 	}
 	s.audit(c, "role.delete", "role", c.Param("name"))
@@ -507,7 +523,7 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 		return
 	}
 	if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
-		s.internalError(c, err)
+		s.storeError(c, err, http.StatusInternalServerError)
 		return
 	}
 	s.audit(c, "plugin.toggle", "plugin", id, "enabled", *req.Enabled)
@@ -612,7 +628,7 @@ func (s *Server) handleCreateToken(c *gin.Context) {
 		ExpiresAt:   expiresAt,
 	}
 	if err := store.AddToken(rec.Username, record); err != nil {
-		s.internalError(c, err)
+		s.storeError(c, err, http.StatusInternalServerError)
 		return
 	}
 	s.audit(c, "token.create", "name", req.Name, "id", jti, "permissions", perms)
@@ -626,7 +642,7 @@ func (s *Server) handleRevokeToken(c *gin.Context) {
 		return
 	}
 	if err := store.RevokeToken(actor(c), c.Param("id")); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		s.storeError(c, err, http.StatusNotFound)
 		return
 	}
 	s.audit(c, "token.revoke", "id", c.Param("id"))

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 
@@ -112,7 +113,8 @@ func Default() *Config {
 }
 
 // Load reads the config file (if present) over the defaults. Environment
-// variables OBSIDIANWEB_VAULT and OBSIDIANWEB_ADDR take precedence.
+// variables OBSIDIANWEB_VAULT and OBSIDIANWEB_ADDR take precedence. The
+// runtime overlay (UI-editable note rules) is applied last.
 func Load(path string) (*Config, error) {
 	cfg := Default()
 	cfg.path = path
@@ -135,6 +137,9 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("OBSIDIANWEB_JWT_SECRET"); v != "" {
 		cfg.Auth.JWTSecret = v
 	}
+	if err := cfg.loadRuntime(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -153,14 +158,45 @@ func parseStrict(data []byte, cfg *Config) error {
 	return nil
 }
 
-// Save persists the configuration back to its file.
-func (c *Config) Save() error {
-	if c.path == "" {
-		return fmt.Errorf("config was not loaded from a file")
+// runtimeSettings is the runtime-editable subset persisted separately
+// from config.yaml: saving it never rewrites the main config, which may
+// hold secrets (injected via env) and be mounted read-only in Docker.
+type runtimeSettings struct {
+	Notes core.NoteRules `yaml:"notes"`
+}
+
+// RuntimePath is the runtime-settings file, living next to the (always
+// writable) users file.
+func (c *Config) RuntimePath() string {
+	return filepath.Join(filepath.Dir(c.Auth.UsersFile), "runtime.yaml")
+}
+
+// loadRuntime overlays runtime.yaml (if present) over the config.
+func (c *Config) loadRuntime() error {
+	data, err := os.ReadFile(c.RuntimePath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read runtime settings: %w", err)
 	}
-	data, err := yaml.Marshal(c)
+	var rt runtimeSettings
+	if err := yaml.Unmarshal(data, &rt); err != nil {
+		return fmt.Errorf("parse %s: %w", c.RuntimePath(), err)
+	}
+	c.Notes = rt.Notes
+	return nil
+}
+
+// SaveRuntime persists the runtime-editable settings atomically.
+func (c *Config) SaveRuntime() error {
+	data, err := yaml.Marshal(runtimeSettings{Notes: c.Notes})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.path, data, 0o644)
+	tmp := c.RuntimePath() + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, c.RuntimePath())
 }

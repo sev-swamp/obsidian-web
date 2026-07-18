@@ -16,6 +16,11 @@ import (
 	"github.com/obsidianweb/obsidianweb/packages/core"
 )
 
+// aclProbeName is a fictional child file used to evaluate folder-level
+// ACL access: rules match note paths (globs like "Docs/**"), so access
+// to a folder is defined as access to a hypothetical note inside it.
+const aclProbeName = "__probe__.md"
+
 func pathParam(c *gin.Context) string {
 	return strings.TrimPrefix(c.Param("path"), "/")
 }
@@ -107,15 +112,8 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 		return
 	}
 	// ACL: check the destination folder before the note is created.
-	rules := s.Notes.Rules()
-	folder := strings.Trim(req.Folder, "/")
-	if folder == "" && req.Type != "" {
-		folder = rules.TypeFolders[req.Type]
-	}
-	if folder == "" {
-		folder = rules.DefaultFolder
-	}
-	if s.aclAccess(c, path.Join(folder, "__probe__.md")) < acl.AccessWrite {
+	folder := s.Notes.ResolveTargetFolder(req)
+	if s.aclAccess(c, path.Join(folder, aclProbeName)) < acl.AccessWrite {
 		c.JSON(http.StatusForbidden, gin.H{"error": "no write access to folder " + folder})
 		return
 	}
@@ -145,7 +143,7 @@ func (s *Server) handleCreateFolder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "folder path is required"})
 		return
 	}
-	if s.aclAccess(c, path.Join(folder, "__probe__.md")) < acl.AccessWrite {
+	if s.aclAccess(c, path.Join(folder, aclProbeName)) < acl.AccessWrite {
 		c.JSON(http.StatusForbidden, gin.H{"error": "no write access to folder " + folder})
 		return
 	}
@@ -247,7 +245,7 @@ func filterTree(node *core.TreeNode, allow core.AllowFunc) *core.TreeNode {
 	for _, child := range node.Children {
 		if child.IsDir {
 			filtered := filterTree(child, allow)
-			if len(filtered.Children) > 0 || allow(child.Path+"/__probe__.md") {
+			if len(filtered.Children) > 0 || allow(child.Path+"/"+aclProbeName) {
 				out.Children = append(out.Children, filtered)
 			}
 		} else if allow(child.Path) {
@@ -560,8 +558,9 @@ func (s *Server) handlePutSettings(c *gin.Context) {
 	}
 	s.Notes.SetRules(req.Notes)
 	s.Config.Notes = req.Notes
-	if err := s.Config.Save(); err != nil {
-		s.Log.Warn("settings not persisted", "error", err)
+	if err := s.Config.SaveRuntime(); err != nil {
+		s.internalError(c, err)
+		return
 	}
 	s.audit(c, "settings.update")
 	c.JSON(http.StatusOK, gin.H{"notes": req.Notes})

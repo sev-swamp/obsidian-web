@@ -8,6 +8,7 @@
 package acl
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -18,6 +19,11 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 )
+
+// ErrConcurrentEdit is returned by Save when users.yaml changed on disk
+// since it was loaded: saving would silently discard the manual edits.
+// The caller must reload (POST /api/admin/reload) and retry.
+var ErrConcurrentEdit = errors.New("users.yaml was modified outside the API; reload before saving")
 
 // Access levels, ordered.
 type Access int
@@ -139,6 +145,12 @@ type Store struct {
 	rules   []Rule
 	sso     SSOConfig
 	plugins map[string]bool
+
+	// loadedMod/loadedSize fingerprint the file as last read or written;
+	// Save refuses to clobber a file that changed since (optimistic lock
+	// against manual edits). Zero values mean "file did not exist".
+	loadedMod  time.Time
+	loadedSize int64
 }
 
 // Load reads users.yaml; a missing file yields an empty store that will
@@ -165,6 +177,7 @@ func (s *Store) Reload() error {
 			s.rules = nil
 			s.sso = SSOConfig{}
 			s.plugins = nil
+			s.loadedMod, s.loadedSize = time.Time{}, 0
 			s.mu.Unlock()
 			return nil
 		}
@@ -201,13 +214,27 @@ func (s *Store) Reload() error {
 		s.sso = SSOConfig{}
 	}
 	s.plugins = data.Plugins
+	s.loadedMod, s.loadedSize = time.Time{}, 0
+	if info, err := os.Stat(s.path); err == nil {
+		s.loadedMod, s.loadedSize = info.ModTime(), info.Size()
+	}
 	s.mu.Unlock()
 	return nil
 }
 
-// Save persists the store atomically (tmp + rename).
+// Save persists the store atomically (tmp + rename). It fails with
+// ErrConcurrentEdit when the on-disk file no longer matches the state
+// this store was loaded from, so API writes never clobber manual edits.
 func (s *Store) Save() error {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if info, err := os.Stat(s.path); err == nil {
+		if s.loadedMod.IsZero() || !info.ModTime().Equal(s.loadedMod) || info.Size() != s.loadedSize {
+			return ErrConcurrentEdit
+		}
+	} // a missing file is fine: the first Save creates it
+
 	data := fileData{ACL: s.rules, Groups: s.groups, Roles: s.roles, Plugins: s.plugins}
 	if s.sso != (SSOConfig{}) {
 		sso := s.sso
@@ -216,7 +243,6 @@ func (s *Store) Save() error {
 	for _, name := range s.order {
 		data.Users = append(data.Users, *s.users[name])
 	}
-	s.mu.RUnlock()
 
 	raw, err := yaml.Marshal(&data)
 	if err != nil {
@@ -226,7 +252,13 @@ func (s *Store) Save() error {
 	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	if info, err := os.Stat(s.path); err == nil {
+		s.loadedMod, s.loadedSize = info.ModTime(), info.Size()
+	}
+	return nil
 }
 
 func validateRules(rules []Rule) error {

@@ -53,7 +53,9 @@ scripts/deploy.sh                   # deploy (needs OBSIDIANWEB_DEPLOY_HOST env)
 - git commits: NO Co-Authored-By/Claude trailers (owner's requirement).
 - docs/adr/ records key decisions; plans/ holds implementation specs.
 - Docker: config mounted read-only at /config, writable /data holds
-  users.yaml, vault at /vault (uid 1000 owns vault and /data).
+  users.yaml + runtime.yaml (UI-edited note rules; lives next to
+  usersFile, config.yaml is never rewritten), vault at /vault (uid 1000
+  owns vault and /data).
 
 ## Gotchas
 
