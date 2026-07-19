@@ -121,6 +121,12 @@ export interface VaultStats {
   brokenLinks: number
 }
 
+export interface PluginSettingSpec {
+  key: string
+  label: string
+  default: string
+}
+
 export interface PluginStatus {
   id: string
   name: string
@@ -128,6 +134,8 @@ export interface PluginStatus {
   description: string
   kind: 'backend' | 'ui'
   enabled: boolean
+  settings?: Record<string, string>
+  settingsSpec?: PluginSettingSpec[]
 }
 
 export interface GroupInfo {

@@ -32,6 +32,10 @@ type PluginStatus struct {
 	Description string `json:"description"`
 	Kind        string `json:"kind"` // backend | ui
 	Enabled     bool   `json:"enabled"`
+	// Settings are the effective values (stored or manifest default)
+	// for the settings declared in SettingsSpec.
+	Settings     map[string]string     `json:"settings,omitempty"`
+	SettingsSpec []pluginsdk.SettingSpec `json:"settingsSpec,omitempty"`
 }
 
 // Manager registers and initializes plugins.
@@ -42,6 +46,8 @@ type Manager struct {
 	log       *slog.Logger
 	plugins   []pluginsdk.Plugin
 	uiPlugins []UIPlugin
+	// settings resolves stored per-plugin settings; nil = nothing stored.
+	settings func(id string) map[string]string
 }
 
 // NewManager creates a plugin manager.
@@ -60,6 +66,42 @@ func (m *Manager) Register(p pluginsdk.Plugin) {
 // RegisterUI adds a toggleable frontend feature to the plugin list.
 func (m *Manager) RegisterUI(p UIPlugin) {
 	m.uiPlugins = append(m.uiPlugins, p)
+}
+
+// SetSettingsSource wires the store that holds per-plugin settings;
+// call before InitAll.
+func (m *Manager) SetSettingsSource(fn func(id string) map[string]string) {
+	m.settings = fn
+}
+
+// SettingsSpec returns the settings declared by a plugin's manifest.
+func (m *Manager) SettingsSpec(id string) []pluginsdk.SettingSpec {
+	for _, p := range m.plugins {
+		if mf := p.Manifest(); mf.ID == id {
+			return mf.Settings
+		}
+	}
+	return nil
+}
+
+// effectiveSettings resolves stored values over manifest defaults.
+func (m *Manager) effectiveSettings(mf pluginsdk.Manifest) map[string]string {
+	if len(mf.Settings) == 0 {
+		return nil
+	}
+	var stored map[string]string
+	if m.settings != nil {
+		stored = m.settings(mf.ID)
+	}
+	out := make(map[string]string, len(mf.Settings))
+	for _, spec := range mf.Settings {
+		if v, ok := stored[spec.Key]; ok && v != "" {
+			out[spec.Key] = v
+		} else {
+			out[spec.Key] = spec.Default
+		}
+	}
+	return out
 }
 
 // Manifests lists registered plugin manifests.
@@ -86,6 +128,7 @@ func (m *Manager) Statuses(enabled func(id string) bool) []PluginStatus {
 		out = append(out, PluginStatus{
 			ID: mf.ID, Name: mf.Name, Version: mf.Version,
 			Description: mf.Description, Kind: "backend", Enabled: isEnabled(mf.ID),
+			Settings: m.effectiveSettings(mf), SettingsSpec: mf.Settings,
 		})
 	}
 	for _, p := range m.uiPlugins {
@@ -175,7 +218,29 @@ func (h *host) Events() core.EventBus       { return h.manager.bus }
 func (h *host) Notes() *core.NoteService    { return h.manager.notes }
 func (h *host) Vault() core.VaultFS         { return h.manager.vault }
 func (h *host) Routes() pluginsdk.Routes    { return h.routes }
+func (h *host) Settings() pluginsdk.Settings { return &hostSettings{manager: h.manager, id: h.id} }
 func (h *host) Logger() *slog.Logger        { return h.log }
+
+// hostSettings resolves plugin settings per call: stored value first,
+// manifest default otherwise, so admin edits apply without a restart.
+type hostSettings struct {
+	manager *Manager
+	id      string
+}
+
+func (s *hostSettings) Get(key string) string {
+	if s.manager.settings != nil {
+		if v, ok := s.manager.settings(s.id)[key]; ok && v != "" {
+			return v
+		}
+	}
+	for _, spec := range s.manager.SettingsSpec(s.id) {
+		if spec.Key == key {
+			return spec.Default
+		}
+	}
+	return ""
+}
 
 // ginRoutes adapts gin to the framework-agnostic pluginsdk.Routes.
 type ginRoutes struct {

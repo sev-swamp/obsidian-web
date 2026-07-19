@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { AclRule, SsoConfig } from '../api/types'
 import { useAuthStore, type Permission } from '../store/auth'
+import { usePrefsStore } from '../store/prefs'
 import { useT, type TKey } from '../i18n'
 import { SettingsIcon, BanIcon } from '../components/icons'
 import { useConfirm } from '../components/ConfirmDialog'
@@ -14,9 +15,12 @@ const btnCls =
 const primaryBtnCls =
   'rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50'
 
-type Tab = 'users' | 'roles' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso' | 'notes'
+type Tab = 'general' | 'users' | 'roles' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso'
 
-const tabs: { id: Tab; label: TKey }[] = [
+// "General" holds personal preferences and is visible to everyone;
+// the remaining tabs drive admin APIs and need settings:write.
+const generalTab: { id: Tab; label: TKey } = { id: 'general', label: 'tabGeneral' }
+const adminTabs: { id: Tab; label: TKey }[] = [
   { id: 'users', label: 'tabUsers' },
   { id: 'roles', label: 'tabRoles' },
   { id: 'groups', label: 'tabGroups' },
@@ -24,11 +28,12 @@ const tabs: { id: Tab; label: TKey }[] = [
   { id: 'tokens', label: 'tabTokens' },
   { id: 'plugins', label: 'tabPlugins' },
   { id: 'sso', label: 'tabSSO' },
-  { id: 'notes', label: 'tabNotes' },
 ]
 
 export function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('users')
+  const [tab, setTab] = useState<Tab>('general')
+  const can = useAuthStore((s) => s.can)
+  const tabs = can('settings:write') ? [generalTab, ...adminTabs] : [generalTab]
   const t = useT()
 
   return (
@@ -54,6 +59,7 @@ export function SettingsPage() {
       </nav>
 
       <div className="pt-6">
+        {tab === 'general' && <GeneralSection />}
         {tab === 'users' && <UsersSection />}
         {tab === 'roles' && <RolesSection />}
         {tab === 'groups' && <GroupsSection />}
@@ -61,107 +67,40 @@ export function SettingsPage() {
         {tab === 'tokens' && <TokensSection />}
         {tab === 'plugins' && <PluginsSection />}
         {tab === 'sso' && <SsoSection />}
-        {tab === 'notes' && <NotesSection />}
       </div>
     </div>
   )
 }
 
-function NotesSection() {
+function GeneralSection() {
   const t = useT()
-  const queryClient = useQueryClient()
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
-  const { data: props } = useQuery({ queryKey: ['properties'], queryFn: api.properties })
-  const [show, setShow] = useState<boolean | null>(null)
-  const [hidden, setHidden] = useState<string[] | null>(null)
-  const [labels, setLabels] = useState<Record<string, string> | null>(null)
-
-  const showValue = show ?? settings?.notes.showProperties ?? false
-  const hiddenValue = hidden ?? settings?.notes.hiddenProperties ?? []
-  const labelsValue = labels ?? settings?.notes.propertyLabels ?? {}
-
-  // Keys come from the vault itself; previously hidden keys stay listed
-  // even when no indexed note carries them any more.
-  const keys = [...new Set([...(props ?? []).map((p) => p.key), ...hiddenValue])].sort()
-  const infoByKey = new Map((props ?? []).map((p) => [p.key, p]))
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.saveSettings({
-        ...settings!.notes,
-        showProperties: showValue,
-        hiddenProperties: hiddenValue,
-        propertyLabels: labelsValue,
-      }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['settings'] }),
-  })
+  const lineNumbers = usePrefsStore((s) => s.lineNumbers)
+  const openInEdit = usePrefsStore((s) => s.openInEdit)
+  const setLineNumbers = usePrefsStore((s) => s.setLineNumbers)
+  const setOpenInEdit = usePrefsStore((s) => s.setOpenInEdit)
 
   return (
     <section className="max-w-2xl">
-      <h2 className="text-lg font-semibold">{t('propertiesSection')}</h2>
-      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('propertiesHint')}</p>
+      <h2 className="text-lg font-semibold">{t('editorSection')}</h2>
+      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('prefsHint')}</p>
       <label className="mt-4 flex items-center gap-2 text-sm">
         <input
           type="checkbox"
-          checked={showValue}
-          onChange={(e) => setShow(e.target.checked)}
+          checked={lineNumbers}
+          onChange={(e) => setLineNumbers(e.target.checked)}
+          className="h-4 w-4 accent-violet-600"
         />
-        {t('showPropertiesToggle')}
+        {t('lineNumbersToggle')}
       </label>
-      <div className="mt-4 space-y-2">
-        {keys.length === 0 && (
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('noPropertiesFound')}</p>
-        )}
-        {keys.map((key) => {
-          const info = infoByKey.get(key)
-          const isHidden = hiddenValue.includes(key)
-          return (
-            <div key={key} className="grid items-center gap-2 sm:grid-cols-[auto_1fr_1fr]">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={!isHidden}
-                  onChange={(e) =>
-                    setHidden(
-                      e.target.checked
-                        ? hiddenValue.filter((k) => k !== key)
-                        : [...hiddenValue, key],
-                    )
-                  }
-                />
-              </label>
-              <span className="text-sm">
-                {key}
-                <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
-                  {info ? `${info.type} · ${info.count}` : '—'}
-                </span>
-              </span>
-              <input
-                className={inputCls}
-                placeholder={t('propertyLabel')}
-                value={labelsValue[key] ?? ''}
-                onChange={(e) => {
-                  const next = { ...labelsValue }
-                  if (e.target.value) next[key] = e.target.value
-                  else delete next[key]
-                  setLabels(next)
-                }}
-              />
-            </div>
-          )
-        })}
-      </div>
-      <div className="mt-4">
-        <button
-          type="button"
-          className={primaryBtnCls}
-          disabled={!settings || save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {t('save')}
-        </button>
-      </div>
-      {save.error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{(save.error as Error).message}</p>}
+      <label className="mt-3 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={openInEdit}
+          onChange={(e) => setOpenInEdit(e.target.checked)}
+          className="h-4 w-4 accent-violet-600"
+        />
+        {t('openInEditToggle')}
+      </label>
     </section>
   )
 }
@@ -859,51 +798,110 @@ function TokensSection() {
 /* ---------------------------------------------------------------- */
 
 function PluginsSection() {
-  const t = useT()
   const queryClient = useQueryClient()
   const { data: pluginList } = useQuery({ queryKey: ['plugins'], queryFn: api.plugins })
 
-  const toggle = useMutation({
-    mutationFn: (vars: { id: string; enabled: boolean }) =>
-      api.adminSetPlugin(vars.id, vars.enabled),
+  const update = useMutation({
+    mutationFn: (vars: {
+      id: string
+      patch: { enabled?: boolean; settings?: Record<string, string> }
+    }) => api.adminSetPlugin(vars.id, vars.patch),
     onSuccess: (statuses) => {
       queryClient.setQueryData(['plugins'], statuses)
+      // Plugin settings can change what plugin endpoints serve
+      // (e.g. the templates folder), so drop derived caches.
+      void queryClient.invalidateQueries({ queryKey: ['templates'] })
     },
   })
 
   return (
     <section className="space-y-2">
       {pluginList?.map((p) => (
-        <div
+        <PluginRow
           key={p.id}
-          className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800"
-        >
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">
-              {p.name}{' '}
-              <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                v{p.version} ·{' '}
-                {p.kind === 'backend' ? t('pluginKindBackend') : t('pluginKindUI')}
-              </span>
-            </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">{p.description}</div>
-          </div>
-          <label className="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={p.enabled}
-              disabled={toggle.isPending}
-              onChange={(e) => toggle.mutate({ id: p.id, enabled: e.target.checked })}
-              className="h-4 w-4 accent-violet-600"
-            />
-            {t('pluginEnabled')}
-          </label>
-        </div>
+          plugin={p}
+          pending={update.isPending}
+          onUpdate={(patch) => update.mutate({ id: p.id, patch })}
+        />
       ))}
-      {toggle.error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{(toggle.error as Error).message}</p>
+      {update.error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{(update.error as Error).message}</p>
       )}
     </section>
+  )
+}
+
+function PluginRow({
+  plugin: p,
+  pending,
+  onUpdate,
+}: {
+  plugin: import('../api/types').PluginStatus
+  pending: boolean
+  onUpdate: (patch: { enabled?: boolean; settings?: Record<string, string> }) => void
+}) {
+  const t = useT()
+  const [draft, setDraft] = useState<Record<string, string> | null>(null)
+  const spec = p.settingsSpec ?? []
+  const values = draft ?? p.settings ?? {}
+
+  return (
+    <div className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">
+            {p.name}{' '}
+            <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+              v{p.version} ·{' '}
+              {p.kind === 'backend' ? t('pluginKindBackend') : t('pluginKindUI')}
+            </span>
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">{p.description}</div>
+        </div>
+        <label className="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+          <input
+            type="checkbox"
+            checked={p.enabled}
+            disabled={pending}
+            onChange={(e) => onUpdate({ enabled: e.target.checked })}
+            className="h-4 w-4 accent-violet-600"
+          />
+          {t('pluginEnabled')}
+        </label>
+      </div>
+
+      {spec.length > 0 && (
+        <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-800/60">
+          <h4 className="mb-2 text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400 uppercase">
+            {t('pluginSettingsTitle')}
+          </h4>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {spec.map((s) => (
+              <label key={s.key} className="block text-sm text-gray-600 dark:text-gray-400">
+                {s.label || s.key}
+                <input
+                  className={`${inputCls} mt-1`}
+                  value={values[s.key] ?? ''}
+                  placeholder={s.default}
+                  onChange={(e) => setDraft({ ...values, [s.key]: e.target.value })}
+                />
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            className={`${primaryBtnCls} mt-2`}
+            disabled={pending || draft === null}
+            onClick={() => {
+              onUpdate({ settings: values })
+              setDraft(null)
+            }}
+          >
+            {t('save')}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

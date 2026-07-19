@@ -123,14 +123,50 @@ type SSOConfig struct {
 	AutoProvision bool   `yaml:"autoProvision" json:"autoProvision"`
 }
 
+// PluginState is the persisted per-plugin state. In YAML it accepts the
+// legacy plain-bool form (`templates: false`) as well as the full form
+// (`templates: {enabled: true, settings: {folder: Notes/Tpl}}`).
+type PluginState struct {
+	Enabled  bool              `yaml:"enabled"`
+	Settings map[string]string `yaml:"settings,omitempty"`
+}
+
+func (p *PluginState) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		var enabled bool
+		if err := value.Decode(&enabled); err != nil {
+			return err
+		}
+		*p = PluginState{Enabled: enabled}
+		return nil
+	}
+	type raw PluginState
+	var r raw
+	if err := value.Decode(&r); err != nil {
+		return err
+	}
+	*p = PluginState(r)
+	return nil
+}
+
+// MarshalYAML keeps the compact bool form when a plugin has no settings.
+func (p PluginState) MarshalYAML() (any, error) {
+	if len(p.Settings) == 0 {
+		return p.Enabled, nil
+	}
+	type raw PluginState
+	return raw(p), nil
+}
+
 type fileData struct {
 	Users  []UserRecord `yaml:"users"`
 	Groups []string     `yaml:"groups"`
 	Roles  []RoleRecord `yaml:"roles,omitempty"`
 	ACL    []Rule       `yaml:"acl"`
 	SSO    *SSOConfig   `yaml:"sso,omitempty"`
-	// Plugins holds per-plugin enabled state; absent = enabled.
-	Plugins map[string]bool `yaml:"plugins,omitempty"`
+	// Plugins holds per-plugin state; an absent entry means enabled
+	// with default settings.
+	Plugins map[string]PluginState `yaml:"plugins,omitempty"`
 }
 
 // Store holds users, groups and ACL rules backed by users.yaml.
@@ -144,7 +180,7 @@ type Store struct {
 	roles   []RoleRecord
 	rules   []Rule
 	sso     SSOConfig
-	plugins map[string]bool
+	plugins map[string]PluginState
 
 	// loadedMod/loadedSize fingerprint the file as last read or written;
 	// Save refuses to clobber a file that changed since (optimistic lock
@@ -739,20 +775,57 @@ func (s *Store) PluginEnabled(id string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if v, ok := s.plugins[id]; ok {
-		return v
+		return v.Enabled
 	}
 	return true
 }
 
-// SetPluginEnabled toggles and persists a plugin's enabled state.
+// SetPluginEnabled toggles and persists a plugin's enabled state,
+// keeping its settings intact.
 func (s *Store) SetPluginEnabled(id string, enabled bool) error {
 	s.mu.Lock()
 	if s.plugins == nil {
-		s.plugins = map[string]bool{}
+		s.plugins = map[string]PluginState{}
 	}
-	s.plugins[id] = enabled
+	state := s.pluginState(id)
+	state.Enabled = enabled
+	s.plugins[id] = state
 	s.mu.Unlock()
 	return s.Save()
+}
+
+// PluginSettings returns a copy of a plugin's stored settings.
+func (s *Store) PluginSettings(id string) map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]string{}
+	for k, v := range s.plugins[id].Settings {
+		out[k] = v
+	}
+	return out
+}
+
+// SetPluginSettings replaces and persists a plugin's settings, keeping
+// its enabled state intact.
+func (s *Store) SetPluginSettings(id string, settings map[string]string) error {
+	s.mu.Lock()
+	if s.plugins == nil {
+		s.plugins = map[string]PluginState{}
+	}
+	state := s.pluginState(id)
+	state.Settings = settings
+	s.plugins[id] = state
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// pluginState returns the stored state or the enabled default; the
+// caller must hold s.mu.
+func (s *Store) pluginState(id string) PluginState {
+	if v, ok := s.plugins[id]; ok {
+		return v
+	}
+	return PluginState{Enabled: true}
 }
 
 // SSO returns the current single-sign-on configuration.

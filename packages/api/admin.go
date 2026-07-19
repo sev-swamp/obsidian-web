@@ -516,17 +516,38 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Enabled *bool `json:"enabled"`
+		Enabled  *bool             `json:"enabled"`
+		Settings map[string]string `json:"settings"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled (boolean) is required"})
+	if err := c.ShouldBindJSON(&req); err != nil || (req.Enabled == nil && req.Settings == nil) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled (boolean) and/or settings (object) is required"})
 		return
 	}
-	if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
-		s.storeError(c, err, http.StatusInternalServerError)
-		return
+	if req.Settings != nil {
+		// Only keys the plugin declares in its manifest are accepted.
+		known := map[string]bool{}
+		for _, spec := range s.Plugins.SettingsSpec(id) {
+			known[spec.Key] = true
+		}
+		for k := range req.Settings {
+			if !known[k] {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "unknown setting: " + k})
+				return
+			}
+		}
+		if err := store.SetPluginSettings(id, req.Settings); err != nil {
+			s.storeError(c, err, http.StatusInternalServerError)
+			return
+		}
+		s.audit(c, "plugin.settings", "plugin", id)
 	}
-	s.audit(c, "plugin.toggle", "plugin", id, "enabled", *req.Enabled)
+	if req.Enabled != nil {
+		if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
+			s.storeError(c, err, http.StatusInternalServerError)
+			return
+		}
+		s.audit(c, "plugin.toggle", "plugin", id, "enabled", *req.Enabled)
+	}
 	if s.Bus != nil {
 		s.Bus.Publish(core.Event{Type: core.EventPluginChanged, Actor: actor(c)})
 	}

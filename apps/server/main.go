@@ -65,7 +65,24 @@ func run(configPath, vaultOverride string) error {
 	linkIndex := links.NewIndex()
 	searchIndex := search.NewIndex()
 	renderer := markdown.NewRenderer(linkIndex)
-	templateEngine := templates.NewEngine(vault, cfg.Vault.TemplatesDir)
+
+	// Team accounts, groups, folder ACL and plugin state (hot-reloadable
+	// users.yaml). Loaded before the note service because the template
+	// engine resolves its folder from plugin settings.
+	aclStore, err := acl.Load(cfg.Auth.UsersFile)
+	if err != nil {
+		return fmt.Errorf("users file: %w", err)
+	}
+
+	// The templates folder is a plugin setting; the config value is the
+	// default. Resolved per call so admin edits apply without restart.
+	templatesDir := func() string {
+		if v := aclStore.PluginSettings("templates")["folder"]; v != "" {
+			return v
+		}
+		return cfg.Vault.TemplatesDir
+	}
+	templateEngine := templates.NewEngineFunc(vault, templatesDir)
 	notes := core.NewNoteService(vault, renderer, linkIndex, searchIndex, templateEngine, bus, cfg.Notes, log)
 
 	if cfg.History.Enabled && cfg.History.Mode != "off" {
@@ -87,11 +104,6 @@ func run(configPath, vaultOverride string) error {
 	authService := auth.NewService(cfg.Auth.Enabled, cfg.Auth.JWTSecret,
 		time.Duration(cfg.Auth.TokenTTLHours)*time.Hour, users)
 
-	// Team accounts, groups and folder ACL (hot-reloadable users.yaml).
-	aclStore, err := acl.Load(cfg.Auth.UsersFile)
-	if err != nil {
-		return fmt.Errorf("users file: %w", err)
-	}
 	// Seed the three built-in roles and let sessions resolve permissions
 	// from the (customizable) role definitions.
 	if err := aclStore.SeedRoles(defaultRoleRecords()); err != nil {
@@ -108,7 +120,9 @@ func run(configPath, vaultOverride string) error {
 	hub := websocket.NewHub(bus, wsAccess, log)
 
 	pluginManager := plugins.NewManager(bus, notes, vault, log)
+	pluginManager.SetSettingsSource(aclStore.PluginSettings)
 	pluginManager.Register(&builtin.StatsPlugin{})
+	pluginManager.Register(builtin.NewTemplatesPlugin(cfg.Vault.TemplatesDir))
 	pluginManager.RegisterUI(plugins.UIPlugin{
 		ID:          "recent-changes",
 		Name:        "Recent changes",

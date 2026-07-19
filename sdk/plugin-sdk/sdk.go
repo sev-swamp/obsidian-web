@@ -15,7 +15,7 @@ import (
 )
 
 // APIVersion is the current Plugin API version.
-const APIVersion = "1.0.0"
+const APIVersion = "1.1.0"
 
 // Manifest describes a plugin to the host.
 type Manifest struct {
@@ -25,12 +25,30 @@ type Manifest struct {
 	Description string `json:"description"`
 	// APIVersion the plugin was built against.
 	APIVersion string `json:"apiVersion"`
+	// Settings declares the admin-editable settings of the plugin; the
+	// host renders them in the UI and persists the values.
+	Settings []SettingSpec `json:"settings,omitempty"`
+}
+
+// SettingSpec describes one plugin setting.
+type SettingSpec struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Default string `json:"default"`
 }
 
 // Routes lets a plugin expose REST endpoints. All routes are mounted
 // under /api/plugins/<plugin-id>/.
 type Routes interface {
 	Handle(method, path string, handler http.HandlerFunc)
+}
+
+// Settings gives a plugin read access to its stored settings. Values
+// are resolved per call, so admin edits apply without a restart.
+type Settings interface {
+	// Get returns the stored value for a key declared in the manifest,
+	// falling back to the manifest default when unset.
+	Get(key string) string
 }
 
 // Host is the controlled surface a plugin receives from the platform.
@@ -43,6 +61,8 @@ type Host interface {
 	Vault() core.VaultFS
 	// Routes registers plugin REST endpoints.
 	Routes() Routes
+	// Settings exposes the plugin's admin-managed settings.
+	Settings() Settings
 	// Logger returns a logger namespaced to the plugin.
 	Logger() *slog.Logger
 }

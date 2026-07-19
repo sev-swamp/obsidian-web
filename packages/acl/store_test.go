@@ -216,3 +216,42 @@ func TestMissingFileYieldsEmptyStore(t *testing.T) {
 		t.Errorf("empty store must be unrestricted, got %s", got)
 	}
 }
+
+func TestPluginStateLegacyAndSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "users.yaml")
+	// Legacy plain-bool form must keep parsing.
+	legacy := "plugins:\n  vault-stats: false\n  recent-changes: true\n"
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.PluginEnabled("vault-stats") {
+		t.Error("vault-stats should be disabled")
+	}
+	if !s.PluginEnabled("recent-changes") || !s.PluginEnabled("unknown") {
+		t.Error("recent-changes and unknown plugins should default to enabled")
+	}
+
+	// Settings survive a save/reload round-trip and keep enabled state.
+	if err := s.SetPluginSettings("templates", map[string]string{"folder": "Notes/Tpl"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPluginEnabled("templates", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if s.PluginEnabled("templates") {
+		t.Error("templates should stay disabled after reload")
+	}
+	if got := s.PluginSettings("templates")["folder"]; got != "Notes/Tpl" {
+		t.Errorf("folder = %q, want Notes/Tpl", got)
+	}
+	if s.PluginEnabled("vault-stats") {
+		t.Error("legacy bool state lost after save round-trip")
+	}
+}

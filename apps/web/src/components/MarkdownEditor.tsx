@@ -47,6 +47,7 @@ function wikilinkSource(notes: () => NoteMeta[]) {
 }
 
 const themeCompartment = new Compartment()
+const lineNumbersCompartment = new Compartment()
 
 function editorTheme(dark: boolean) {
   return EditorView.theme(
@@ -71,12 +72,14 @@ export function MarkdownEditor({
   onSave,
   notes,
   dark,
+  showLineNumbers = true,
 }: {
   value: string
   onChange: (value: string) => void
   onSave?: (content: string) => void
   notes: NoteMeta[]
   dark: boolean
+  showLineNumbers?: boolean
 }) {
   const parent = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -93,7 +96,7 @@ export function MarkdownEditor({
     const state = EditorState.create({
       doc: value,
       extensions: [
-        lineNumbers(),
+        lineNumbersCompartment.of(showLineNumbers ? lineNumbers() : []),
         history(),
         drawSelection(),
         highlightActiveLine(),
@@ -146,6 +149,12 @@ export function MarkdownEditor({
       effects: themeCompartment.reconfigure(editorTheme(dark)),
     })
   }, [dark])
+
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: lineNumbersCompartment.reconfigure(showLineNumbers ? lineNumbers() : []),
+    })
+  }, [showLineNumbers])
 
   return (
     <div

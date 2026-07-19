@@ -11,6 +11,7 @@ import { MarkdownView } from '../components/MarkdownView'
 import { MarkdownEditor } from '../components/MarkdownEditor'
 import { useConfirm } from '../components/ConfirmDialog'
 import { useAuthStore } from '../store/auth'
+import { usePrefsStore } from '../store/prefs'
 import { useThemeStore } from '../store/theme'
 import { usePresenceStore } from '../store/presence'
 import { useWsStore } from '../store/ws'
@@ -33,6 +34,8 @@ export function NotePage() {
   const can = useAuthStore((s) => s.can)
   const username = useAuthStore((s) => s.username)
   const theme = useThemeStore((s) => s.theme)
+  const lineNumbers = usePrefsStore((s) => s.lineNumbers)
+  const openInEdit = usePrefsStore((s) => s.openInEdit)
   const t = useT()
 
   const {
@@ -79,6 +82,17 @@ export function NotePage() {
     setConflict(null)
     setHistoryOpen(false)
   }, [notePath])
+
+  // "Open in edit mode" preference: enter the editor as soon as a newly
+  // opened note arrives. Keyed by canonical path so refetches of the
+  // same note (e.g. after a save) don't drag the user back into editing.
+  useEffect(() => {
+    if (!openInEdit || !note || !can('notes:edit') || note.access === 'read') return
+    setDraft(note.content)
+    setBaseHash(note.contentHash)
+    setEditing(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canonicalPath])
 
   const connectionId = useWsStore((s) => s.connectionId)
 
@@ -299,6 +313,7 @@ export function NotePage() {
           onSave={(content) => save.mutate({ content, baseHash })}
           notes={allNotes ?? []}
           dark={theme === 'dark'}
+          showLineNumbers={lineNumbers}
         />
       ) : (
         <MarkdownView html={note.html ?? ''} />

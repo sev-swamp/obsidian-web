@@ -112,6 +112,10 @@ func (s *Server) handleCreateNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.Template != "" && !s.pluginEnabled("templates") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "templates plugin is disabled"})
+		return
+	}
 	// ACL: check the destination folder before the note is created.
 	folder := s.Notes.ResolveTargetFolder(req)
 	if s.aclAccess(c, path.Join(folder, aclProbeName)) < acl.AccessWrite {
@@ -288,18 +292,6 @@ func (s *Server) handleRecent(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, notes)
-}
-
-func (s *Server) handleTemplates(c *gin.Context) {
-	names, err := s.Notes.Templates()
-	if err != nil {
-		s.internalError(c, err)
-		return
-	}
-	if names == nil {
-		names = []string{}
-	}
-	c.JSON(http.StatusOK, names)
 }
 
 // inlineSafe reports whether a MIME type may render inline in the

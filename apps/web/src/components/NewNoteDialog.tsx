@@ -33,10 +33,17 @@ export function NewNoteDialog({
   const t = useT()
 
   const { data: tree } = useQuery({ queryKey: ['tree'], queryFn: api.tree, enabled: open })
+  const { data: pluginList } = useQuery({
+    queryKey: ['plugins'],
+    queryFn: api.plugins,
+    enabled: open,
+  })
+  const templatesEnabled =
+    pluginList?.find((p) => p.id === 'templates')?.enabled ?? true
   const { data: templates } = useQuery({
     queryKey: ['templates'],
     queryFn: api.templates,
-    enabled: open,
+    enabled: open && templatesEnabled,
   })
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -108,21 +115,23 @@ export function NewNoteDialog({
               ))}
             </datalist>
           </label>
-          <label className="block text-sm">
-            {t('templateLabel')}
-            <select
-              value={template}
-              onChange={(e) => setTemplate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
-            >
-              <option value="">{t('none')}</option>
-              {templates?.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
+          {templatesEnabled && (
+            <label className="block text-sm">
+              {t('templateLabel')}
+              <select
+                value={template}
+                onChange={(e) => setTemplate(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+              >
+                <option value="">{t('none')}</option>
+                {templates?.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {create.error && (
             <p className="text-sm text-red-600 dark:text-red-400">{(create.error as Error).message}</p>
           )}

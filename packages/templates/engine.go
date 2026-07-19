@@ -16,22 +16,31 @@ import (
 // Engine implements core.TemplateEngine over a vault directory.
 type Engine struct {
 	fs  core.VaultFS
-	dir string
+	dir func() string
 }
 
 var _ core.TemplateEngine = (*Engine)(nil)
 
-// NewEngine creates a template engine reading from dir inside the vault.
+// NewEngine creates a template engine reading from a fixed dir inside
+// the vault.
 func NewEngine(fs core.VaultFS, dir string) *Engine {
-	return &Engine{fs: fs, dir: strings.Trim(dir, "/")}
+	return NewEngineFunc(fs, func() string { return dir })
+}
+
+// NewEngineFunc creates an engine whose directory is resolved on every
+// call, so runtime configuration (e.g. plugin settings) can change it
+// without a restart.
+func NewEngineFunc(fs core.VaultFS, dir func() string) *Engine {
+	return &Engine{fs: fs, dir: func() string { return strings.Trim(dir(), "/") }}
 }
 
 // List returns template names (file names without extension).
 func (e *Engine) List() ([]string, error) {
-	if !e.fs.Exists(e.dir) {
+	dir := e.dir()
+	if !e.fs.Exists(dir) {
 		return nil, nil
 	}
-	entries, err := e.fs.List(e.dir)
+	entries, err := e.fs.List(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +60,7 @@ var varRe = regexp.MustCompile(`\{\{\s*([\w-]+)(?::([^}]+))?\s*\}\}`)
 // time, datetime, title, filename, currentuser and actor; anything else
 // comes from vars. The last two are supplied by NoteService on creation.
 func (e *Engine) Render(name string, vars map[string]string) (string, error) {
-	data, err := e.fs.Read(e.dir + "/" + name + ".md")
+	data, err := e.fs.Read(e.dir() + "/" + name + ".md")
 	if err != nil {
 		return "", fmt.Errorf("template not found: %w", err)
 	}

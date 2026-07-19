@@ -114,14 +114,10 @@ export const api = {
     request<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`),
   notes: () => request<NoteMeta[]>('/api/notes'),
   recent: (limit = 10) => request<NoteMeta[]>(`/api/recent?limit=${limit}`),
-  templates: () => request<string[]>('/api/templates'),
+  // Served by the built-in templates plugin; 404 when it is disabled.
+  templates: () => request<string[]>('/api/plugins/templates/list'),
   properties: () => request<PropertyInfo[]>('/api/properties'),
   settings: () => request<Settings>('/api/settings'),
-  saveSettings: (notes: Settings['notes']) =>
-    request<{ notes: Settings['notes'] }>('/api/settings', {
-      method: 'PUT',
-      body: JSON.stringify({ notes }),
-    }),
   authStatus: () => request<{ authEnabled: boolean }>('/api/auth/status'),
   // Admin: user & ACL management
   adminUsers: () => request<{ users: AdminUser[]; groups: string[] }>('/api/admin/users'),
@@ -185,10 +181,10 @@ export const api = {
   plugins: () => request<PluginStatus[]>('/api/plugins'),
   // Served by the built-in vault-stats plugin; 404 when it is disabled.
   vaultStats: () => request<VaultStats>('/api/plugins/vault-stats/summary'),
-  adminSetPlugin: (id: string, enabled: boolean) =>
+  adminSetPlugin: (id: string, patch: { enabled?: boolean; settings?: Record<string, string> }) =>
     request<PluginStatus[]>(`/api/admin/plugins/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify(patch),
     }),
   me: (token: string) =>
     request<{ username: string; role: string; permissions: Permission[] }>('/api/auth/me', {

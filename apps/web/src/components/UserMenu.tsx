@@ -56,12 +56,12 @@ export function UserMenu() {
     <div ref={ref} className="relative border-t border-gray-200 pt-2 dark:border-gray-800">
       {open && (
         <div className="absolute bottom-full left-0 z-30 mb-1 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-          {can('settings:write') && (
-            <button onClick={() => go('/settings')} className={itemCls}>
-              <SettingsIcon size={15} className="text-gray-500 dark:text-gray-400" />
-              {t('settingsTitle')}
-            </button>
-          )}
+          {/* Settings hold personal preferences too, so everyone gets in;
+              admin tabs inside are still gated by settings:write. */}
+          <button onClick={() => go('/settings')} className={itemCls}>
+            <SettingsIcon size={15} className="text-gray-500 dark:text-gray-400" />
+            {t('settingsTitle')}
+          </button>
 
           {/* Language as a submenu with a right-side flyout. */}
           <div className="relative">
