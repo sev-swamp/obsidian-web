@@ -412,8 +412,11 @@ function NoteProperties({
   frontmatter?: Record<string, unknown>
   rules?: NoteRules
 }) {
-  if (!rules?.showProperties || !frontmatter) return null
-  const hidden = new Set(rules.hiddenProperties ?? [])
+  // Whether to show the panel is a personal preference; which keys are
+  // hidden and how they are captioned stays server-side (runtime.yaml).
+  const show = usePrefsStore((s) => s.showProperties)
+  if (!show || !frontmatter) return null
+  const hidden = new Set(rules?.hiddenProperties ?? [])
   const entries = Object.entries(frontmatter).filter(
     ([key, value]) =>
       !builtinProperties.has(key) &&
@@ -428,7 +431,7 @@ function NoteProperties({
     <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
       {entries.map(([key, value]) => (
         <div key={key} className="contents">
-          <dt className="text-gray-500 dark:text-gray-400">{rules.propertyLabels?.[key] ?? key}</dt>
+          <dt className="text-gray-500 dark:text-gray-400">{rules?.propertyLabels?.[key] ?? key}</dt>
           <dd className="min-w-0 break-words">
             <PropertyValue propKey={key} value={value} />
           </dd>

@@ -76,8 +76,10 @@ function GeneralSection() {
   const t = useT()
   const lineNumbers = usePrefsStore((s) => s.lineNumbers)
   const openInEdit = usePrefsStore((s) => s.openInEdit)
+  const showProperties = usePrefsStore((s) => s.showProperties)
   const setLineNumbers = usePrefsStore((s) => s.setLineNumbers)
   const setOpenInEdit = usePrefsStore((s) => s.setOpenInEdit)
+  const setShowProperties = usePrefsStore((s) => s.setShowProperties)
 
   return (
     <section className="max-w-2xl">
@@ -100,6 +102,15 @@ function GeneralSection() {
           className="h-4 w-4 accent-violet-600"
         />
         {t('openInEditToggle')}
+      </label>
+      <label className="mt-3 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={showProperties}
+          onChange={(e) => setShowProperties(e.target.checked)}
+          className="h-4 w-4 accent-violet-600"
+        />
+        {t('showPropertiesToggle')}
       </label>
     </section>
   )
