@@ -149,8 +149,11 @@ author: Ivan
 ---
 ```
 
-Any property can be shown below the note title after it is configured in
-**Settings → Notes**. Empty properties are not shown.
+All frontmatter properties are shown automatically below the note title
+(empty values are skipped). **Settings → Notes** toggles the panel, hides
+individual properties or renames their captions. Values render by their
+detected type: dates, lists as chips, `[[wiki-links]]` and URLs as links;
+clicking a value searches for notes with the same property.
 
 ## Template variables
 
@@ -174,3 +177,8 @@ Any property can be shown below the note title after it is configured in
 | `path:Projects plan`| "plan" only under the Projects folder  |
 | `prop:author=Ivan`  | exact frontmatter property match       |
 | `prop:created:2026-07` | partial frontmatter property match  |
+| `prop:created>=2026-07-01` | range match (`>`, `>=`, `<`, `<=`); numbers compare numerically, ISO dates lexicographically |
+| `prop:created="2026-07-18 16:00"` | quotes keep spaces inside a value |
+
+Typing `prop:` in the search dialog suggests known keys, and `prop:key=`
+suggests the values observed in the vault.

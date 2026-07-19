@@ -46,14 +46,51 @@ func TestSearchPropertyFilters(t *testing.T) {
 	idx.Index(core.SearchDoc{Path: "daily.md", Title: "Daily", Body: "entry", Frontmatter: map[string]any{
 		"created": "2026-07-18 16:00", "author": "Ivan", "tags": []any{"daily", "work"}, "empty": nil,
 	}})
-	idx.Index(core.SearchDoc{Path: "other.md", Title: "Other", Body: "entry", Frontmatter: map[string]any{"author": "Petr"}})
+	idx.Index(core.SearchDoc{Path: "other.md", Title: "Other", Body: "entry", Frontmatter: map[string]any{
+		"created": "2026-06-01", "author": "Petr",
+	}})
 
-	for _, query := range []string{"prop:author=ivan", "prop:created:2026-07", "prop:tags=daily", "prop:empty="} {
+	queries := []string{
+		"prop:author=ivan",
+		"prop:created:2026-07",
+		"prop:tags=daily",
+		"prop:empty=",
+		`prop:created="2026-07-18 16:00"`,
+		"prop:created>=2026-07-01",
+		"prop:created>2026-06-01",
+	}
+	for _, query := range queries {
 		if r := idx.Search(query, 10); len(r) != 1 || r[0].Path != "daily.md" {
 			t.Errorf("%q: %+v", query, r)
 		}
 	}
 	if r := idx.Search("prop:author=ivan entry", 10); len(r) != 1 || r[0].Path != "daily.md" {
 		t.Errorf("combined filter: %+v", r)
+	}
+	if r := idx.Search("prop:created<=2026-06-01", 10); len(r) != 1 || r[0].Path != "other.md" {
+		t.Errorf("less-or-equal: %+v", r)
+	}
+}
+
+func TestProperties(t *testing.T) {
+	idx := NewIndex()
+	idx.Index(core.SearchDoc{Path: "daily.md", Frontmatter: map[string]any{
+		"created": "2026-07-18 16:00", "author": "Ivan", "tags": []any{"daily", "work"},
+	}})
+	idx.Index(core.SearchDoc{Path: "secret.md", Frontmatter: map[string]any{"author": "Hidden"}})
+
+	props := idx.Properties(func(path string) bool { return path != "secret.md" })
+	byKey := map[string]core.PropertyInfo{}
+	for _, p := range props {
+		byKey[p.Key] = p
+	}
+	if p := byKey["author"]; p.Count != 1 || p.Type != "text" || len(p.Values) != 1 || p.Values[0].Value != "Ivan" {
+		t.Errorf("author: %+v", p)
+	}
+	if p := byKey["created"]; p.Type != "datetime" {
+		t.Errorf("created: %+v", p)
+	}
+	if p := byKey["tags"]; p.Type != "list" || len(p.Values) != 2 {
+		t.Errorf("tags: %+v", p)
 	}
 }

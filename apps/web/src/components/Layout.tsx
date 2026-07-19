@@ -9,13 +9,15 @@ import { NewNoteDialog } from './NewNoteDialog'
 import { HelpDialog } from './HelpDialog'
 import { UserMenu } from './UserMenu'
 import { useAuthStore } from '../store/auth'
+import { useSearchStore } from '../store/search'
 import { useThemeStore } from '../store/theme'
 import { useT } from '../i18n'
 import { MenuIcon, SearchIcon, SunIcon, MoonIcon } from './icons'
 
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
+  const openSearch = useSearchStore((s) => s.openSearch)
+  const toggleSearch = useSearchStore((s) => s.toggle)
   const [newNoteOpen, setNewNoteOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const { theme, toggle } = useThemeStore()
@@ -30,7 +32,7 @@ export function Layout() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
-        setSearchOpen((v) => !v)
+        toggleSearch()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -53,14 +55,14 @@ export function Layout() {
         </Link>
         <div className="flex-1" />
         <button
-          onClick={() => setSearchOpen(true)}
+          onClick={() => openSearch()}
           className="hidden items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-500 hover:border-gray-400 sm:flex dark:border-gray-700 dark:text-gray-400"
         >
           {t('searchButton')}
           <kbd className="rounded bg-gray-100 px-1.5 text-xs dark:bg-gray-800">⌘K</kbd>
         </button>
         <button
-          onClick={() => setSearchOpen(true)}
+          onClick={() => openSearch()}
           className="rounded p-1.5 hover:bg-gray-100 sm:hidden dark:hover:bg-gray-800"
           aria-label={t('searchAria')}
         >
@@ -111,7 +113,7 @@ export function Layout() {
         </main>
       </div>
 
-      <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchDialog />
       <NewNoteDialog open={newNoteOpen} onClose={() => setNewNoteOpen(false)} />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>

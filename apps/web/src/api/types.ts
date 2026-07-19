@@ -65,13 +65,17 @@ export interface NoteRules {
   defaultFolder: string
   typeFolders: Record<string, string> | null
   autoFrontmatter: boolean
-  properties?: PropertyDefinition[]
+  showProperties: boolean
+  hiddenProperties: string[] | null
+  propertyLabels: Record<string, string> | null
 }
 
-export interface PropertyDefinition {
+/** One frontmatter key observed across the vault (GET /api/properties). */
+export interface PropertyInfo {
   key: string
-  label: string
-  type: 'text' | 'date' | 'datetime' | 'list' | 'link'
+  type: 'text' | 'number' | 'checkbox' | 'date' | 'datetime' | 'list' | 'link'
+  count: number
+  values?: { value: string; count: number }[]
 }
 
 export interface Settings {

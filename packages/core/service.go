@@ -477,6 +477,12 @@ func (s *NoteService) Search(query string, limit int, allow AllowFunc) []SearchR
 	return filtered
 }
 
+// Properties lists frontmatter keys observed across the vault, for the
+// settings UI and search autocomplete. allow filters per-user visibility.
+func (s *NoteService) Properties(allow AllowFunc) []PropertyInfo {
+	return s.search.Properties(allow)
+}
+
 // ListNotes returns metadata for every markdown note in the vault. It
 // serves from the in-memory meta cache (populated by ReindexAll, kept
 // fresh by saves and watcher events) instead of walking the file system

@@ -67,11 +67,30 @@ type SearchDoc struct {
 	Frontmatter map[string]any
 }
 
+// PropertyInfo describes one frontmatter key observed across the vault:
+// how many notes carry it, the dominant value type (text, number, checkbox,
+// date, datetime, list, link) and the most frequent values.
+type PropertyInfo struct {
+	Key    string          `json:"key"`
+	Type   string          `json:"type"`
+	Count  int             `json:"count"`
+	Values []PropertyValue `json:"values,omitempty"`
+}
+
+// PropertyValue is one observed value of a frontmatter key.
+type PropertyValue struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
 // SearchIndex is an in-memory, incrementally updated full-text index.
 type SearchIndex interface {
 	Index(doc SearchDoc)
 	Remove(path string)
 	Search(query string, limit int) []SearchResult
+	// Properties aggregates frontmatter keys over notes visible to the
+	// caller (allow nil = all) for settings and search autocomplete.
+	Properties(allow AllowFunc) []PropertyInfo
 }
 
 // TemplateEngine renders note templates stored inside the vault.

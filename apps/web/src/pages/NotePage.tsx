@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '../api/client'
-import type { ConflictInfo } from '../api/types'
+import type { ConflictInfo, NoteRules } from '../api/types'
+import { propertyQuery } from '../components/SearchDialog'
+import { useSearchStore } from '../store/search'
 import { Breadcrumbs } from '../components/Breadcrumbs'
 import { HistoryPanel } from '../components/HistoryPanel'
 import { MarkdownView } from '../components/MarkdownView'
@@ -226,10 +228,7 @@ export function NotePage() {
               ))}
             </div>
           )}
-          <NoteProperties
-            frontmatter={note.frontmatter}
-            definitions={settings?.notes.properties ?? []}
-          />
+          <NoteProperties frontmatter={note.frontmatter} rules={settings?.notes} />
         </div>
         <div className="flex shrink-0 gap-2">
           {editing ? (
@@ -388,34 +387,104 @@ export function NotePage() {
   )
 }
 
+// title and tags already have dedicated rendering above the panel.
+const builtinProperties = new Set(['title', 'tags'])
+
 function NoteProperties({
   frontmatter,
-  definitions,
+  rules,
 }: {
   frontmatter?: Record<string, unknown>
-  definitions: { key: string; label: string; type: string }[]
+  rules?: NoteRules
 }) {
-  const values = definitions.flatMap((definition) => {
-    const value = frontmatter?.[definition.key]
-    if (value === undefined || value === null || value === '') return []
-    return [{ ...definition, value }]
-  })
-  if (values.length === 0) return null
+  if (!rules?.showProperties || !frontmatter) return null
+  const hidden = new Set(rules.hiddenProperties ?? [])
+  const entries = Object.entries(frontmatter).filter(
+    ([key, value]) =>
+      !builtinProperties.has(key) &&
+      !hidden.has(key) &&
+      value !== undefined &&
+      value !== null &&
+      value !== '',
+  )
+  if (entries.length === 0) return null
 
   return (
     <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-      {values.map((property) => (
-        <div key={property.key} className="contents">
-          <dt className="text-gray-500 dark:text-gray-400">{property.label || property.key}</dt>
-          <dd className="min-w-0 break-words">{formatPropertyValue(property.value, property.type)}</dd>
+      {entries.map(([key, value]) => (
+        <div key={key} className="contents">
+          <dt className="text-gray-500 dark:text-gray-400">{rules.propertyLabels?.[key] ?? key}</dt>
+          <dd className="min-w-0 break-words">
+            <PropertyValue propKey={key} value={value} />
+          </dd>
         </div>
       ))}
     </dl>
   )
 }
 
-function formatPropertyValue(value: unknown, type: string): string {
-  if (Array.isArray(value)) return value.map(String).join(', ')
-  if (type === 'date' && typeof value === 'string') return value.slice(0, 10)
-  return String(value)
+const chipCls =
+  'rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700 hover:bg-violet-100 hover:text-violet-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-violet-950 dark:hover:text-violet-300'
+
+function PropertyValue({ propKey, value }: { propKey: string; value: unknown }) {
+  const navigate = useNavigate()
+  const openSearch = useSearchStore((s) => s.openSearch)
+
+  if (Array.isArray(value)) {
+    return (
+      <span className="flex flex-wrap gap-1">
+        {value.map((item, i) => (
+          <button
+            key={`${String(item)}-${i}`}
+            onClick={() => openSearch(propertyQuery(propKey, String(item)))}
+            className={chipCls}
+          >
+            {String(item)}
+          </button>
+        ))}
+      </span>
+    )
+  }
+  if (typeof value === 'boolean') return <span>{value ? '✓' : '✗'}</span>
+  const text = String(value)
+
+  const wiki = text.match(/^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]$/)
+  if (wiki) {
+    const target = wiki[1].trim()
+    return (
+      <button
+        onClick={() =>
+          navigate('/n/' + target.replace(/\.md$/i, '').split('/').map(encodeURIComponent).join('/'))
+        }
+        className="text-violet-600 hover:underline dark:text-violet-400"
+      >
+        {wiki[2]?.trim() || target}
+      </button>
+    )
+  }
+  if (/^https?:\/\//.test(text)) {
+    return (
+      <a
+        href={text}
+        target="_blank"
+        rel="noreferrer"
+        className="text-violet-600 hover:underline dark:text-violet-400"
+      >
+        {text}
+      </a>
+    )
+  }
+  // Unrendered Templater expressions (<% … %>) are data for Obsidian, not
+  // for us — show them muted instead of pretending they are values.
+  if (text.startsWith('<%')) {
+    return <code className="text-xs text-gray-400 dark:text-gray-500">{text}</code>
+  }
+  return (
+    <button
+      onClick={() => openSearch(propertyQuery(propKey, text))}
+      className="text-left hover:text-violet-600 hover:underline dark:hover:text-violet-400"
+    >
+      {text}
+    </button>
+  )
 }

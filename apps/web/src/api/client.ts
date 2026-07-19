@@ -10,6 +10,7 @@ import type {
   DeletedFile,
   Note,
   NoteMeta,
+  PropertyInfo,
   Revision,
   SearchResult,
   Settings,
@@ -114,6 +115,7 @@ export const api = {
   notes: () => request<NoteMeta[]>('/api/notes'),
   recent: (limit = 10) => request<NoteMeta[]>(`/api/recent?limit=${limit}`),
   templates: () => request<string[]>('/api/templates'),
+  properties: () => request<PropertyInfo[]>('/api/properties'),
   settings: () => request<Settings>('/api/settings'),
   saveSettings: (notes: Settings['notes']) =>
     request<{ notes: Settings['notes'] }>('/api/settings', {

@@ -273,6 +273,14 @@ func (s *Server) handleSearch(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
+func (s *Server) handleProperties(c *gin.Context) {
+	props := s.Notes.Properties(s.allowRead(c))
+	if props == nil {
+		props = []core.PropertyInfo{}
+	}
+	c.JSON(http.StatusOK, props)
+}
+
 func (s *Server) handleRecent(c *gin.Context) {
 	notes, err := s.Notes.Recent(limitParam(c, 10), s.allowRead(c))
 	if err != nil {

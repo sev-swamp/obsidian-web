@@ -97,6 +97,7 @@ func Default() *Config {
 			DefaultFolder:   "Inbox",
 			TypeFolders:     map[string]string{},
 			AutoFrontmatter: true,
+			ShowProperties:  true,
 		},
 		Auth: AuthConfig{
 			TokenTTLHours: 24,

@@ -4,9 +4,12 @@ package search
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/obsidianweb/obsidianweb/packages/core"
@@ -80,13 +83,13 @@ func (idx *Index) removeLocked(path string) {
 	}
 }
 
-// Search supports free text plus `tag:x` and `path:x` filters. The last
-// term matches as a prefix so search-as-you-type works.
+// Search supports free text plus `tag:x`, `path:x` and `prop:` filters.
+// The last term matches as a prefix so search-as-you-type works.
 func (idx *Index) Search(query string, limit int) []core.SearchResult {
 	var terms []string
 	var tagFilters, pathFilters []string
 	var propertyFilters []propertyFilter
-	for _, field := range strings.Fields(strings.ToLower(query)) {
+	for _, field := range splitQuery(query) {
 		switch {
 		case strings.HasPrefix(field, "tag:"):
 			tagFilters = append(tagFilters, strings.TrimPrefix(field, "tag:"))
@@ -157,23 +160,58 @@ func (idx *Index) Search(query string, limit int) []core.SearchResult {
 	return results
 }
 
+// splitQuery lowercases the query and splits it into fields, keeping
+// double-quoted sections together (quotes are dropped) so filter values
+// may contain spaces: prop:created="2026-07-18 16:00".
+func splitQuery(query string) []string {
+	var fields []string
+	var b strings.Builder
+	inQuotes := false
+	flush := func() {
+		if b.Len() > 0 {
+			fields = append(fields, b.String())
+			b.Reset()
+		}
+	}
+	for _, r := range strings.ToLower(query) {
+		switch {
+		case r == '"':
+			inQuotes = !inQuotes
+		case unicode.IsSpace(r) && !inQuotes:
+			flush()
+		default:
+			b.WriteRune(r)
+		}
+	}
+	flush()
+	return fields
+}
+
 type propertyFilter struct {
 	key   string
 	value string
-	exact bool
+	op    string // "=" exact, ":" substring, or ">", ">=", "<", "<="
 }
 
-// prop:key=value matches a complete value; prop:key:value matches a
-// case-insensitive substring. Values are deliberately token-sized, like the
-// existing tag: and path: filters.
+// Two-character operators are listed before their one-character prefixes
+// so ">=" wins over ">" at the same position.
+var propertyOps = []string{">=", "<=", "=", ">", "<", ":"}
+
+// parsePropertyFilter splits "key<op>value". "=" matches a complete value,
+// ":" a case-insensitive substring; comparisons order numerically when both
+// sides are numbers and lexicographically otherwise (ISO dates compare
+// correctly that way: prop:created>=2026-07-01).
 func parsePropertyFilter(raw string) (propertyFilter, bool) {
-	if key, value, ok := strings.Cut(raw, "="); ok && key != "" {
-		return propertyFilter{key: key, value: value, exact: true}, true
+	at, op := -1, ""
+	for _, candidate := range propertyOps {
+		if i := strings.Index(raw, candidate); i > 0 && (at < 0 || i < at) {
+			at, op = i, candidate
+		}
 	}
-	if key, value, ok := strings.Cut(raw, ":"); ok && key != "" {
-		return propertyFilter{key: key, value: value}, true
+	if at < 0 {
+		return propertyFilter{}, false
 	}
-	return propertyFilter{}, false
+	return propertyFilter{key: raw[:at], value: raw[at+len(op):], op: op}, true
 }
 
 func matchesProperties(doc core.SearchDoc, filters []propertyFilter) bool {
@@ -191,7 +229,7 @@ func matchesProperties(doc core.SearchDoc, filters []propertyFilter) bool {
 
 func matchesPropertyValue(value any, filter propertyFilter) bool {
 	if value == nil {
-		return filter.value == ""
+		return filter.op == "=" && filter.value == ""
 	}
 	if list, ok := value.([]any); ok {
 		for _, item := range list {
@@ -209,11 +247,181 @@ func matchesPropertyValue(value any, filter propertyFilter) bool {
 		}
 		return false
 	}
-	text := strings.ToLower(fmt.Sprint(value))
-	if filter.exact {
+	text := strings.ToLower(propertyString(value))
+	switch filter.op {
+	case "=":
 		return text == filter.value
+	case ":":
+		return strings.Contains(text, filter.value)
+	default:
+		return comparePropertyValues(text, filter.value, filter.op)
 	}
-	return strings.Contains(text, filter.value)
+}
+
+func comparePropertyValues(a, b, op string) bool {
+	cmp := strings.Compare(a, b)
+	if fa, err := strconv.ParseFloat(a, 64); err == nil {
+		if fb, err := strconv.ParseFloat(b, 64); err == nil {
+			switch {
+			case fa < fb:
+				cmp = -1
+			case fa > fb:
+				cmp = 1
+			default:
+				cmp = 0
+			}
+		}
+	}
+	switch op {
+	case ">":
+		return cmp > 0
+	case ">=":
+		return cmp >= 0
+	case "<":
+		return cmp < 0
+	case "<=":
+		return cmp <= 0
+	}
+	return false
+}
+
+// propertyString renders a frontmatter scalar for matching and display.
+// yaml.v3 decodes unquoted ISO dates into time.Time; format those back
+// into the shape people type in queries.
+func propertyString(value any) string {
+	if t, ok := value.(time.Time); ok {
+		if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 {
+			return t.Format("2006-01-02")
+		}
+		return t.Format("2006-01-02 15:04")
+	}
+	return fmt.Sprint(value)
+}
+
+// maxPropertyValues caps the per-key value list returned by Properties;
+// it feeds autocomplete, not analytics.
+const maxPropertyValues = 50
+
+// Properties aggregates frontmatter keys across indexed notes visible to
+// the caller: note count, dominant value type and most frequent values.
+func (idx *Index) Properties(allow core.AllowFunc) []core.PropertyInfo {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	type agg struct {
+		count  int
+		types  map[string]int
+		values map[string]int
+	}
+	keys := map[string]*agg{}
+	for path, doc := range idx.docs {
+		if allow != nil && !allow(path) {
+			continue
+		}
+		for key, value := range doc.Frontmatter {
+			a := keys[key]
+			if a == nil {
+				a = &agg{types: map[string]int{}, values: map[string]int{}}
+				keys[key] = a
+			}
+			a.count++
+			a.types[inferPropertyType(value)]++
+			for _, v := range flattenPropertyValue(value) {
+				a.values[v]++
+			}
+		}
+	}
+
+	out := make([]core.PropertyInfo, 0, len(keys))
+	for key, a := range keys {
+		out = append(out, core.PropertyInfo{
+			Key:    key,
+			Type:   dominantType(a.types),
+			Count:  a.count,
+			Values: topValues(a.values),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+var (
+	dateRe     = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	datetimeRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}`)
+)
+
+func inferPropertyType(value any) string {
+	switch v := value.(type) {
+	case bool:
+		return "checkbox"
+	case int, int64, uint64, float64:
+		return "number"
+	case []any, []string:
+		return "list"
+	case time.Time:
+		if v.Hour() == 0 && v.Minute() == 0 && v.Second() == 0 {
+			return "date"
+		}
+		return "datetime"
+	case string:
+		switch {
+		case dateRe.MatchString(v):
+			return "date"
+		case datetimeRe.MatchString(v):
+			return "datetime"
+		case strings.HasPrefix(v, "[[") && strings.HasSuffix(v, "]]"):
+			return "link"
+		}
+	}
+	return "text"
+}
+
+func flattenPropertyValue(value any) []string {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []any:
+		var out []string
+		for _, item := range v {
+			out = append(out, flattenPropertyValue(item)...)
+		}
+		return out
+	case []string:
+		return v
+	default:
+		s := propertyString(v)
+		if s == "" {
+			return nil
+		}
+		return []string{s}
+	}
+}
+
+func dominantType(counts map[string]int) string {
+	best, bestCount := "text", 0
+	for typ, count := range counts {
+		if count > bestCount || (count == bestCount && typ < best) {
+			best, bestCount = typ, count
+		}
+	}
+	return best
+}
+
+func topValues(counts map[string]int) []core.PropertyValue {
+	out := make([]core.PropertyValue, 0, len(counts))
+	for v, c := range counts {
+		out = append(out, core.PropertyValue{Value: v, Count: c})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Value < out[j].Value
+	})
+	if len(out) > maxPropertyValues {
+		out = out[:maxPropertyValues]
+	}
+	return out
 }
 
 func (idx *Index) termScores(term string, prefix bool) map[string]float64 {

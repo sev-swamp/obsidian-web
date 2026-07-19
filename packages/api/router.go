@@ -86,6 +86,7 @@ func (s *Server) Router() *gin.Engine {
 		read.GET("/raw/*path", s.handleRawNote)
 		read.GET("/tree", s.handleTree)
 		read.GET("/search", s.handleSearch)
+		read.GET("/properties", s.handleProperties)
 		read.GET("/recent", s.handleRecent)
 		read.GET("/templates", s.handleTemplates)
 		read.GET("/settings", s.handleGetSettings)

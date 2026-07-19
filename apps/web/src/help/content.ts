@@ -255,8 +255,8 @@ export const helpSections: HelpSection[] = [
       {
         code: 'created: "2026-07-18 16:00"\nauthor: Ivan',
         text: {
-          en: 'Any YAML field can be displayed when it is enabled in Settings → Notes.',
-          ru: 'Любое YAML-поле можно показывать, включив его в «Настройки → Заметки».',
+          en: 'All YAML fields are shown automatically under the note title. Settings → Notes toggles the panel, hides properties or renames them.',
+          ru: 'Все YAML-поля автоматически показываются под заголовком заметки. В «Настройки → Заметки» панель можно выключить, скрыть или переименовать свойства.',
         },
       },
     ],
@@ -319,8 +319,15 @@ export const helpSections: HelpSection[] = [
       {
         code: 'prop:author=Ivan',
         text: {
-          en: 'Search by a frontmatter property. Use prop:key:value for a partial match.',
-          ru: 'Поиск по свойству frontmatter. Для частичного совпадения: prop:ключ:значение.',
+          en: 'Search by a frontmatter property. Use prop:key:value for a partial match. Typing prop: suggests keys and values.',
+          ru: 'Поиск по свойству frontmatter. Для частичного совпадения: prop:ключ:значение. При вводе prop: подсказываются ключи и значения.',
+        },
+      },
+      {
+        code: 'prop:created>=2026-07-01\nprop:created="2026-07-18 16:00"',
+        text: {
+          en: 'Date/number ranges via >, >=, <, <=; quote values that contain spaces.',
+          ru: 'Диапазоны дат и чисел через >, >=, <, <=; значения с пробелами берите в кавычки.',
         },
       },
     ],

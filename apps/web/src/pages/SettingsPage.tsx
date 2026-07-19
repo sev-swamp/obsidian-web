@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { AclRule, PropertyDefinition, SsoConfig } from '../api/types'
+import type { AclRule, SsoConfig } from '../api/types'
 import { useAuthStore, type Permission } from '../store/auth'
 import { useT, type TKey } from '../i18n'
 import { SettingsIcon, BanIcon } from '../components/icons'
@@ -71,34 +71,95 @@ function NotesSection() {
   const t = useT()
   const queryClient = useQueryClient()
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
-  const [properties, setProperties] = useState<PropertyDefinition[] | null>(null)
-  const displayed = properties ?? settings?.notes.properties ?? []
+  const { data: props } = useQuery({ queryKey: ['properties'], queryFn: api.properties })
+  const [show, setShow] = useState<boolean | null>(null)
+  const [hidden, setHidden] = useState<string[] | null>(null)
+  const [labels, setLabels] = useState<Record<string, string> | null>(null)
+
+  const showValue = show ?? settings?.notes.showProperties ?? false
+  const hiddenValue = hidden ?? settings?.notes.hiddenProperties ?? []
+  const labelsValue = labels ?? settings?.notes.propertyLabels ?? {}
+
+  // Keys come from the vault itself; previously hidden keys stay listed
+  // even when no indexed note carries them any more.
+  const keys = [...new Set([...(props ?? []).map((p) => p.key), ...hiddenValue])].sort()
+  const infoByKey = new Map((props ?? []).map((p) => [p.key, p]))
+
   const save = useMutation({
-    mutationFn: () => api.saveSettings({ ...settings!.notes, properties: displayed }),
+    mutationFn: () =>
+      api.saveSettings({
+        ...settings!.notes,
+        showProperties: showValue,
+        hiddenProperties: hiddenValue,
+        propertyLabels: labelsValue,
+      }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['settings'] }),
   })
-  const update = (index: number, patch: Partial<PropertyDefinition>) =>
-    setProperties(displayed.map((property, i) => (i === index ? { ...property, ...patch } : property)))
 
   return (
     <section className="max-w-2xl">
       <h2 className="text-lg font-semibold">{t('propertiesSection')}</h2>
       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('propertiesHint')}</p>
+      <label className="mt-4 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={showValue}
+          onChange={(e) => setShow(e.target.checked)}
+        />
+        {t('showPropertiesToggle')}
+      </label>
       <div className="mt-4 space-y-2">
-        {displayed.map((property, index) => (
-          <div key={`${property.key}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_8rem_auto]">
-            <input className={inputCls} placeholder={t('propertyKey')} value={property.key} onChange={(e) => update(index, { key: e.target.value })} />
-            <input className={inputCls} placeholder={t('propertyLabel')} value={property.label} onChange={(e) => update(index, { label: e.target.value })} />
-            <select className={inputCls} value={property.type} onChange={(e) => update(index, { type: e.target.value as PropertyDefinition['type'] })}>
-              <option value="text">Text</option><option value="date">Date</option><option value="datetime">Date & time</option><option value="list">List</option><option value="link">Link</option>
-            </select>
-            <button type="button" className={btnCls} onClick={() => setProperties(displayed.filter((_, i) => i !== index))}>{t('removeProperty')}</button>
-          </div>
-        ))}
+        {keys.length === 0 && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{t('noPropertiesFound')}</p>
+        )}
+        {keys.map((key) => {
+          const info = infoByKey.get(key)
+          const isHidden = hiddenValue.includes(key)
+          return (
+            <div key={key} className="grid items-center gap-2 sm:grid-cols-[auto_1fr_1fr]">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!isHidden}
+                  onChange={(e) =>
+                    setHidden(
+                      e.target.checked
+                        ? hiddenValue.filter((k) => k !== key)
+                        : [...hiddenValue, key],
+                    )
+                  }
+                />
+              </label>
+              <span className="text-sm">
+                {key}
+                <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
+                  {info ? `${info.type} · ${info.count}` : '—'}
+                </span>
+              </span>
+              <input
+                className={inputCls}
+                placeholder={t('propertyLabel')}
+                value={labelsValue[key] ?? ''}
+                onChange={(e) => {
+                  const next = { ...labelsValue }
+                  if (e.target.value) next[key] = e.target.value
+                  else delete next[key]
+                  setLabels(next)
+                }}
+              />
+            </div>
+          )
+        })}
       </div>
-      <div className="mt-4 flex gap-2">
-        <button type="button" className={btnCls} onClick={() => setProperties([...displayed, { key: '', label: '', type: 'text' }])}>{t('addProperty')}</button>
-        <button type="button" className={primaryBtnCls} disabled={!settings || save.isPending || displayed.some((p) => !p.key.trim())} onClick={() => save.mutate()}>{t('save')}</button>
+      <div className="mt-4">
+        <button
+          type="button"
+          className={primaryBtnCls}
+          disabled={!settings || save.isPending}
+          onClick={() => save.mutate()}
+        >
+          {t('save')}
+        </button>
       </div>
       {save.error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{(save.error as Error).message}</p>}
     </section>

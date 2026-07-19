@@ -72,18 +72,14 @@ type NoteRules struct {
 	DefaultFolder   string            `yaml:"defaultFolder" json:"defaultFolder"`
 	TypeFolders     map[string]string `yaml:"typeFolders" json:"typeFolders"`
 	AutoFrontmatter bool              `yaml:"autoFrontmatter" json:"autoFrontmatter"`
-	// Properties controls which frontmatter fields are shown below a note title.
-	// An empty list keeps the properties panel hidden.
-	Properties []PropertyDefinition `yaml:"properties" json:"properties"`
+	// ShowProperties toggles the frontmatter panel under a note title.
+	// Properties are discovered automatically from note frontmatter;
+	// HiddenProperties excludes keys from the panel and PropertyLabels
+	// overrides how a key is captioned.
+	ShowProperties   bool              `yaml:"showProperties" json:"showProperties"`
+	HiddenProperties []string          `yaml:"hiddenProperties" json:"hiddenProperties"`
+	PropertyLabels   map[string]string `yaml:"propertyLabels" json:"propertyLabels"`
 	// TrackAuthorship maintains created_by / updated_by frontmatter
 	// fields on notes saved through the platform.
 	TrackAuthorship bool `yaml:"trackAuthorship" json:"trackAuthorship"`
-}
-
-// PropertyDefinition describes one frontmatter field displayed by the UI.
-// Type is a presentation hint: text, date, datetime, list, or link.
-type PropertyDefinition struct {
-	Key   string `yaml:"key" json:"key"`
-	Label string `yaml:"label" json:"label"`
-	Type  string `yaml:"type" json:"type"`
 }
