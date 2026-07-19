@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { ConfirmProvider } from './components/ConfirmDialog'
+import { ToastProvider } from './components/Toast'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -17,7 +18,9 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ConfirmProvider>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </ConfirmProvider>
       </BrowserRouter>
     </QueryClientProvider>

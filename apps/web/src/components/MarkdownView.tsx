@@ -9,8 +9,13 @@ declare global {
     MathJax?: {
       typesetPromise?: (elements?: Element[]) => Promise<void>
     }
+    __mathJaxReady?: Promise<void>
   }
 }
+
+// Serializes typeset calls so overlapping edits/renders never race MathJax
+// against itself (e.g. React StrictMode's double effect invocation in dev).
+let mathJaxQueue: Promise<void> = Promise.resolve()
 
 // MarkdownView displays server-rendered HTML and activates the
 // client-side pieces: internal link routing, Mermaid diagrams, MathJax.
@@ -43,7 +48,11 @@ export function MarkdownView({ html }: { html: string }) {
     if (diagrams.length > 0) {
       void mermaid.run({ nodes: diagrams }).catch(() => {})
     }
-    void window.MathJax?.typesetPromise?.([el])?.catch(() => {})
+    const ready = window.__mathJaxReady ?? Promise.resolve()
+    mathJaxQueue = mathJaxQueue
+      .then(() => ready)
+      .then(() => window.MathJax?.typesetPromise?.([el]))
+      .catch(() => {})
   }, [html, theme])
 
   const onClick = (e: React.MouseEvent) => {

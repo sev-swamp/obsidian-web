@@ -7,6 +7,7 @@ import { usePrefsStore } from '../store/prefs'
 import { useT, type TKey } from '../i18n'
 import { SettingsIcon, BanIcon } from '../components/icons'
 import { useConfirm } from '../components/ConfirmDialog'
+import { useToast } from '../components/Toast'
 
 const inputCls =
   'w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 dark:border-gray-700'
@@ -130,6 +131,7 @@ function useRoleNames(): string[] {
 
 function UsersSection() {
   const t = useT()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
   const { data } = useQuery({ queryKey: ['admin-users'], queryFn: api.adminUsers })
@@ -147,6 +149,7 @@ function UsersSection() {
     onSuccess: () => {
       setNewUser({ username: '', password: '', role: 'viewer', groups: '' })
       invalidate()
+      toast(t('savedSuccessfully'))
     },
   })
 
@@ -223,6 +226,7 @@ function UserRow({
 }) {
   const t = useT()
   const confirm = useConfirm()
+  const toast = useToast()
   const [groups, setGroups] = useState((user.groups ?? []).join(', '))
   const [password, setPassword] = useState('')
 
@@ -232,6 +236,7 @@ function UserRow({
     onSuccess: () => {
       setPassword('')
       onChanged()
+      toast(t('savedSuccessfully'))
     },
   })
   const remove = useMutation({
@@ -240,7 +245,10 @@ function UserRow({
   })
   const revoke = useMutation({
     mutationFn: () => api.adminRevoke(user.username),
-    onSuccess: onChanged,
+    onSuccess: () => {
+      onChanged()
+      toast(t('savedSuccessfully'))
+    },
   })
 
   return (
@@ -309,6 +317,7 @@ function UserRow({
 
 function RolesSection() {
   const t = useT()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const { data } = useQuery({ queryKey: ['admin-roles'], queryFn: api.adminRoles })
   const invalidate = () => {
@@ -324,6 +333,7 @@ function RolesSection() {
     onSuccess: () => {
       setNewRole({ name: '', description: '', permissions: [] })
       invalidate()
+      toast(t('savedSuccessfully'))
     },
   })
 
@@ -382,6 +392,7 @@ function RoleRow({
 }) {
   const t = useT()
   const confirm = useConfirm()
+  const toast = useToast()
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState(role.description)
   const [permissions, setPermissions] = useState<string[]>(role.permissions ?? [])
@@ -390,7 +401,10 @@ function RoleRow({
 
   const save = useMutation({
     mutationFn: () => api.adminUpdateRole(role.name, { description, permissions }),
-    onSuccess: onChanged,
+    onSuccess: () => {
+      onChanged()
+      toast(t('savedSuccessfully'))
+    },
   })
   const remove = useMutation({
     mutationFn: () => api.adminDeleteRole(role.name),
@@ -498,6 +512,7 @@ function PermissionPicker({
 function GroupsSection() {
   const t = useT()
   const confirm = useConfirm()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const { data } = useQuery({ queryKey: ['admin-groups'], queryFn: api.adminGroups })
   const [name, setName] = useState('')
@@ -511,6 +526,7 @@ function GroupsSection() {
     onSuccess: () => {
       setName('')
       invalidate()
+      toast(t('savedSuccessfully'))
     },
   })
   const del = useMutation({
@@ -576,6 +592,7 @@ function GroupsSection() {
 
 function AccessSection() {
   const t = useT()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const { data: aclData } = useQuery({ queryKey: ['admin-acl'], queryFn: api.adminGetACL })
 
@@ -588,6 +605,7 @@ function AccessSection() {
       setAclError('')
       setRulesText(null)
       void queryClient.invalidateQueries({ queryKey: ['admin-acl'] })
+      toast(t('savedSuccessfully'))
     },
     onError: (err) => setAclError((err as Error).message),
   })
@@ -675,6 +693,7 @@ function AccessSection() {
 
 function TokensSection() {
   const t = useT()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const myPermissions = useAuthStore((s) => s.permissions) ?? []
 
@@ -702,7 +721,10 @@ function TokensSection() {
 
   const revoke = useMutation({
     mutationFn: (id: string) => api.revokeToken(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tokens'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tokens'] })
+      toast(t('savedSuccessfully'))
+    },
   })
 
   return (
@@ -809,6 +831,8 @@ function TokensSection() {
 /* ---------------------------------------------------------------- */
 
 function PluginsSection() {
+  const t = useT()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const { data: pluginList } = useQuery({ queryKey: ['plugins'], queryFn: api.plugins })
 
@@ -822,6 +846,7 @@ function PluginsSection() {
       // Plugin settings can change what plugin endpoints serve
       // (e.g. the templates folder), so drop derived caches.
       void queryClient.invalidateQueries({ queryKey: ['templates'] })
+      toast(t('savedSuccessfully'))
     },
   })
 
@@ -922,6 +947,7 @@ function PluginRow({
 
 function SsoSection() {
   const t = useT()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const { data } = useQuery({ queryKey: ['admin-sso'], queryFn: api.adminGetSSO })
 
@@ -942,6 +968,7 @@ function SsoSection() {
     onSuccess: () => {
       setForm(null)
       void queryClient.invalidateQueries({ queryKey: ['admin-sso'] })
+      toast(t('savedSuccessfully'))
     },
   })
 

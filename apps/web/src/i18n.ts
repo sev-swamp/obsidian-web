@@ -129,6 +129,7 @@ const en = {
 
   // Settings
   settingsTitle: 'Settings',
+  savedSuccessfully: 'Saved',
   tabUsers: 'Users',
   tabRoles: 'Roles',
   tabGroups: 'Groups',
@@ -311,6 +312,7 @@ const ru: Record<TKey, string> = {
   helpClose: 'Закрыть справку',
 
   settingsTitle: 'Настройки',
+  savedSuccessfully: 'Сохранено',
   tabUsers: 'Пользователи',
   tabRoles: 'Роли',
   tabGroups: 'Группы',
