@@ -36,6 +36,7 @@ type Server struct {
 	Log   *slog.Logger
 
 	loginLimits *loginLimiter
+	loginCodes  *loginCodeStore
 }
 
 // aclAccess resolves the caller's folder-level access to a vault path.
@@ -63,6 +64,9 @@ func (s *Server) Router() *gin.Engine {
 	if s.loginLimits == nil {
 		s.loginLimits = newLoginLimiter(10, 15*time.Minute)
 	}
+	if s.loginCodes == nil {
+		s.loginCodes = newLoginCodeStore()
+	}
 	r := gin.New()
 	r.Use(gin.Recovery(), s.requestLogger())
 	if s.Config.Server.DevCORS {
@@ -77,7 +81,16 @@ func (s *Server) Router() *gin.Engine {
 	r.GET("/api/auth/sso/status", s.handleSSOStatus)
 	r.GET("/api/auth/sso/login", s.handleSSOLogin)
 	r.GET("/api/auth/sso/callback", s.handleSSOCallback)
+	r.POST("/api/auth/code", s.handleAuthCode)
+	r.GET("/api/auth/providers", s.handleAuthProviders)
 	r.GET("/api/auth/me", s.requirePermission(auth.PermNotesRead), s.handleMe)
+
+	// Service API for external auth plugins: authenticated by service
+	// tokens only (never JWTs), each route with its explicit permission.
+	r.POST("/api/service/users", s.requireServicePermission(auth.PermUsersProvision), s.handleServiceUpsertUser)
+	r.PUT("/api/service/users", s.requireServicePermission(auth.PermUsersProvision), s.handleServiceUpsertUser)
+	r.POST("/api/service/login-code", s.requireServicePermission(auth.PermSessionCode), s.handleServiceLoginCode)
+	r.PUT("/api/service/login-providers", s.requireServicePermission(auth.PermLoginProvidersWrite), s.handleServiceUpsertProvider)
 
 	read := r.Group("/api", s.requirePermission(auth.PermNotesRead))
 	{
@@ -150,6 +163,11 @@ func (s *Server) Router() *gin.Engine {
 		admin.DELETE("/roles/:name", s.handleAdminDeleteRole)
 		admin.GET("/sso", s.handleAdminGetSSO)
 		admin.PUT("/sso", s.handleAdminPutSSO)
+		admin.GET("/service-tokens", s.handleAdminListServiceTokens)
+		admin.POST("/service-tokens", s.handleAdminCreateServiceToken)
+		admin.DELETE("/service-tokens/:id", s.handleAdminRevokeServiceToken)
+		admin.GET("/login-providers", s.handleAdminGetLoginProviders)
+		admin.PUT("/login-providers", s.handleAdminPutLoginProviders)
 		admin.PUT("/plugins/:id", s.handleAdminSetPlugin)
 		admin.GET("/check", s.handleAdminCheck)
 		admin.POST("/reload", s.handleAdminReload)

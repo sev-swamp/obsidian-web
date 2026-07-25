@@ -41,6 +41,21 @@ const (
 	PermTrashPurge  = "trash:purge"
 )
 
+// Service-token permissions (packages/api service endpoints). They are
+// granted only to service tokens of external auth plugins and are never
+// part of user roles, so they stay out of AllPermissions.
+const (
+	PermUsersProvision      = "users:provision"
+	PermSessionCode         = "session:code"
+	PermLoginProvidersWrite = "login-providers:write"
+)
+
+// ServiceTokenPermissions returns the catalog assignable to service
+// tokens, in a stable display order.
+func ServiceTokenPermissions() []string {
+	return []string{PermUsersProvision, PermSessionCode, PermLoginProvidersWrite}
+}
+
 var rolePermissions = map[string][]string{
 	RoleViewer: {PermNotesRead},
 	RoleEditor: {PermNotesRead, PermNotesEdit, PermNotesDelete, PermHistory, PermUpload, PermTrashRead},

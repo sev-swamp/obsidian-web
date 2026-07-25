@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { AclRule, SsoConfig } from '../api/types'
+import type { AclRule, LoginProvider, SsoConfig } from '../api/types'
 import { useAuthStore, type Permission } from '../store/auth'
 import { usePrefsStore } from '../store/prefs'
 import { useT, type TKey } from '../i18n'
@@ -67,7 +67,13 @@ export function SettingsPage() {
         {tab === 'access' && <AccessSection />}
         {tab === 'tokens' && <TokensSection />}
         {tab === 'plugins' && <PluginsSection />}
-        {tab === 'sso' && <SsoSection />}
+        {tab === 'sso' && (
+          <>
+            <SsoSection />
+            <LoginProvidersSection />
+            <ServiceTokensSection />
+          </>
+        )}
       </div>
     </div>
   )
@@ -1062,6 +1068,265 @@ function SsoSection() {
       >
         {t('ssoSaveBtn')}
       </button>
+    </section>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* External login providers (SSO plugins)                             */
+/* ---------------------------------------------------------------- */
+
+function LoginProvidersSection() {
+  const t = useT()
+  const toast = useToast()
+  const confirm = useConfirm()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({ queryKey: ['admin-login-providers'], queryFn: api.adminLoginProviders })
+  const providers = data?.providers ?? []
+
+  const [draft, setDraft] = useState<LoginProvider>({ id: '', name: '', url: '' })
+  const save = useMutation({
+    mutationFn: (next: LoginProvider[]) => api.adminPutLoginProviders(next),
+    onSuccess: () => {
+      setDraft({ id: '', name: '', url: '' })
+      void queryClient.invalidateQueries({ queryKey: ['admin-login-providers'] })
+      void queryClient.invalidateQueries({ queryKey: ['auth-providers'] })
+      toast(t('savedSuccessfully'))
+    },
+  })
+
+  const externalUrl = (url: string) => {
+    try {
+      return new URL(url, window.location.origin).host !== window.location.host
+    } catch {
+      return false
+    }
+  }
+
+  return (
+    <section className="mt-10 max-w-xl border-t border-gray-200 pt-6 dark:border-gray-800">
+      <h2 className="text-lg font-semibold">{t('loginProvidersTitle')}</h2>
+      <p className="mt-1 mb-3 text-sm text-gray-500 dark:text-gray-400">{t('loginProvidersHint')}</p>
+      <ul className="space-y-2">
+        {providers.map((p) => (
+          <li
+            key={p.id}
+            className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">
+                {p.name} <span className="text-xs font-normal text-gray-500">({p.id})</span>
+              </div>
+              <div className="truncate text-xs text-gray-500 dark:text-gray-400">{p.url}</div>
+              {externalUrl(p.url) && (
+                <div className="text-xs text-amber-600 dark:text-amber-400">
+                  {t('providerExternalWarn')}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() =>
+                void confirm({
+                  title: `${t('deleteUserBtn')} «${p.name}»?`,
+                  confirmLabel: t('deleteUserBtn'),
+                  danger: true,
+                }).then((ok) => ok && save.mutate(providers.filter((x) => x.id !== p.id)))
+              }
+              className={`${btnCls} shrink-0 text-red-600 dark:text-red-400`}
+            >
+              {t('deleteUserBtn')}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="mt-3 grid gap-2 rounded-xl border border-dashed border-gray-300 p-4 dark:border-gray-700"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (draft.id && draft.name && draft.url) {
+            save.mutate([...providers.filter((x) => x.id !== draft.id), draft])
+          }
+        }}
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input
+            className={inputCls}
+            placeholder={t('providerIdLabel')}
+            value={draft.id}
+            onChange={(e) => setDraft({ ...draft, id: e.target.value })}
+          />
+          <input
+            className={inputCls}
+            placeholder={t('providerNameLabel')}
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          />
+        </div>
+        <input
+          className={inputCls}
+          placeholder={t('providerUrlLabel')}
+          value={draft.url}
+          onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+        />
+        {save.error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{(save.error as Error).message}</p>
+        )}
+        <button
+          type="submit"
+          disabled={!draft.id || !draft.name || !draft.url || save.isPending}
+          className={primaryBtnCls}
+        >
+          {t('addProviderBtn')}
+        </button>
+      </form>
+    </section>
+  )
+}
+
+/* ---------------------------------------------------------------- */
+/* Service tokens (SSO plugins)                                       */
+/* ---------------------------------------------------------------- */
+
+function ServiceTokensSection() {
+  const t = useT()
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({ queryKey: ['admin-service-tokens'], queryFn: api.adminServiceTokens })
+  const roleNames = useRoleNames()
+  const catalog = data?.permissions ?? []
+
+  const [form, setForm] = useState({ id: '', name: '', roleCeiling: 'viewer', permissions: [] as string[] })
+  const [issued, setIssued] = useState('')
+
+  const create = useMutation({
+    mutationFn: () => api.adminCreateServiceToken(form),
+    onSuccess: (res) => {
+      setIssued(res.token)
+      setForm({ id: '', name: '', roleCeiling: 'viewer', permissions: [] })
+      void queryClient.invalidateQueries({ queryKey: ['admin-service-tokens'] })
+    },
+  })
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.adminRevokeServiceToken(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-service-tokens'] })
+      toast(t('savedSuccessfully'))
+    },
+  })
+
+  return (
+    <section className="mt-10 max-w-xl border-t border-gray-200 pt-6 dark:border-gray-800">
+      <h2 className="text-lg font-semibold">{t('serviceTokensTitle')}</h2>
+      <p className="mt-1 mb-3 text-sm text-gray-500 dark:text-gray-400">{t('serviceTokensHint')}</p>
+      <ul className="space-y-2">
+        {data?.tokens.map((tok) => (
+          <li
+            key={tok.id}
+            className="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-800"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">
+                {tok.name} <span className="text-xs font-normal text-gray-500">({tok.id})</span>{' '}
+                {tok.revoked && (
+                  <span className="text-xs text-red-600 dark:text-red-400">({t('revoked')})</span>
+                )}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {tok.permissions.join(', ')} · {t('roleCeilingShort')}: {tok.roleCeiling}
+              </div>
+            </div>
+            {!tok.revoked && (
+              <button
+                onClick={() => revoke.mutate(tok.id)}
+                className="shrink-0 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+              >
+                {t('revokeBtn')}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <form
+        className="mt-3 space-y-3 rounded-xl border border-dashed border-gray-300 p-4 dark:border-gray-700"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (form.id && form.name && form.permissions.length > 0) create.mutate()
+        }}
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input
+            className={inputCls}
+            placeholder={t('serviceTokenIdLabel')}
+            value={form.id}
+            onChange={(e) => setForm({ ...form, id: e.target.value })}
+          />
+          <input
+            className={inputCls}
+            placeholder={t('tokenName')}
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </div>
+        <label className="block text-sm text-gray-600 dark:text-gray-400">
+          {t('roleCeilingLabel')}
+          <select
+            className={`${inputCls} mt-1`}
+            value={form.roleCeiling}
+            onChange={(e) => setForm({ ...form, roleCeiling: e.target.value })}
+          >
+            {roleNames.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
+        <fieldset className="text-sm text-gray-600 dark:text-gray-400">
+          <legend>{t('permissionsLabel')}</legend>
+          <div className="mt-1 flex flex-wrap gap-3">
+            {catalog.map((p) => (
+              <label key={p} className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={form.permissions.includes(p)}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      permissions: e.target.checked
+                        ? [...form.permissions, p]
+                        : form.permissions.filter((x) => x !== p),
+                    })
+                  }
+                  className="accent-violet-600"
+                />
+                <code className="text-xs">{p}</code>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {create.error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{(create.error as Error).message}</p>
+        )}
+        <button
+          type="submit"
+          disabled={!form.id || !form.name || form.permissions.length === 0 || create.isPending}
+          className={primaryBtnCls}
+        >
+          {t('createTokenBtn')}
+        </button>
+      </form>
+
+      {issued && (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
+          <p className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+            {t('tokenCreatedOnce')}
+          </p>
+          <code className="block overflow-x-auto rounded bg-white p-2 text-xs break-all dark:bg-gray-900">
+            {issued}
+          </code>
+        </div>
+      )}
     </section>
   )
 }

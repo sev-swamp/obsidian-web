@@ -3,8 +3,10 @@ import type {
   AdminUser,
   ApiTokenRecord,
   GroupInfo,
+  LoginProvider,
   PluginStatus,
   RoleRecord,
+  ServiceTokenRecord,
   SsoConfig,
   CreateNoteRequest,
   DeletedFile,
@@ -178,6 +180,36 @@ export const api = {
       body: JSON.stringify({ sso }),
     }),
   ssoStatus: () => request<{ enabled: boolean; name: string }>('/api/auth/sso/status'),
+  // External login providers (SSO plugins) + one-time login codes
+  authProviders: () => request<{ providers: LoginProvider[] }>('/api/auth/providers'),
+  exchangeLoginCode: (code: string) =>
+    request<{ token: string; username: string; role: string; permissions: Permission[] }>(
+      '/api/auth/code',
+      { method: 'POST', body: JSON.stringify({ code }) },
+    ),
+  adminServiceTokens: () =>
+    request<{ tokens: ServiceTokenRecord[]; permissions: string[] }>('/api/admin/service-tokens'),
+  adminCreateServiceToken: (body: {
+    id: string
+    name: string
+    permissions: string[]
+    roleCeiling: string
+  }) =>
+    request<{ token: string; record: ServiceTokenRecord }>('/api/admin/service-tokens', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  adminRevokeServiceToken: (id: string) =>
+    request<{ status: string }>(`/api/admin/service-tokens/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  adminLoginProviders: () =>
+    request<{ providers: LoginProvider[] }>('/api/admin/login-providers'),
+  adminPutLoginProviders: (providers: LoginProvider[]) =>
+    request<{ providers: LoginProvider[] }>('/api/admin/login-providers', {
+      method: 'PUT',
+      body: JSON.stringify({ providers }),
+    }),
   plugins: () => request<PluginStatus[]>('/api/plugins'),
   // Served by the built-in vault-stats plugin; 404 when it is disabled.
   vaultStats: () => request<VaultStats>('/api/plugins/vault-stats/summary'),

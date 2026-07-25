@@ -161,6 +161,23 @@ export interface SsoConfig {
   autoProvision: boolean
 }
 
+/** Machine credential for external auth plugins (plan 4). */
+export interface ServiceTokenRecord {
+  id: string
+  name: string
+  permissions: string[]
+  roleCeiling: string
+  createdAt: string
+  revoked: boolean
+}
+
+/** External sign-in option rendered as a button on the login page. */
+export interface LoginProvider {
+  id: string
+  name: string
+  url: string
+}
+
 export interface ApiTokenRecord {
   id: string
   name: string

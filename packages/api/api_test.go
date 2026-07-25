@@ -52,6 +52,7 @@ type testEnv struct {
 	router *gin.Engine
 	auth   *auth.Service
 	store  *acl.Store
+	srv    *Server
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -128,7 +129,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		Bus:     bus,
 		Log:     log,
 	}
-	return &testEnv{router: srv.Router(), auth: authSvc, store: store}
+	return &testEnv{router: srv.Router(), auth: authSvc, store: store, srv: srv}
 }
 
 // token issues a session for a store-managed user.

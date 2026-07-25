@@ -28,10 +28,37 @@ a request lacking a permission is `403 {"error":"missing permission: …"}`.
 
 ## Auth
 
-| Method | Path               | Description                                              |
-| ------ | ------------------ | -------------------------------------------------------- |
-| POST   | `/api/auth/login`  | `{username, password}` → `{token, role, permissions}`    |
-| GET    | `/api/auth/status` | `{authEnabled}`                                          |
+| Method | Path                  | Description                                              |
+| ------ | --------------------- | -------------------------------------------------------- |
+| POST   | `/api/auth/login`     | `{username, password}` → `{token, role, permissions}`    |
+| GET    | `/api/auth/status`    | `{authEnabled}`                                          |
+| POST   | `/api/auth/code`      | `{code}` — exchange a one-time login code (minted by an SSO plugin via the service API) for a session: `{token, username, role, permissions}`. Codes are single-use with a 30 s TTL; invalid/expired → 401 |
+| GET    | `/api/auth/providers` | `{providers: [{id, name, url}]}` — external sign-in buttons for the login page (empty when auth is off) |
+
+## Service API (external auth plugins)
+
+Machine endpoints for SSO plugins (see docs/sso-plugin.md). They accept
+only **service tokens** — `Authorization: Bearer svc_<id>_<secret>` —
+never user JWTs. A token's permissions are explicit (not derived from a
+role); its `roleCeiling` caps every role it may assign. Secrets are
+bcrypt-hashed in users.yaml, so revocation applies on the next request.
+Every call is audit-logged with the actor `svc:<id>`.
+
+| Method   | Path                          | Permission              | Description |
+| -------- | ----------------------------- | ----------------------- | ----------- |
+| POST/PUT | `/api/service/users`          | `users:provision`       | Upsert `{username, role, groups}` as an SSO-only account (no password, sign-in only via the provider). Role above the ceiling, users already outranking the ceiling and statically configured accounts → 403; passwords are never touched, deletion is impossible |
+| POST     | `/api/service/login-code`     | `session:code`          | `{username}` → `{code, expiresAt}` — one-time login code for an **existing** user (unknown → 404). Existence and tokenVersion are re-checked at exchange time |
+| PUT      | `/api/service/login-providers`| `login-providers:write` | `{id, name, url}` — the plugin registers/updates its own login button |
+
+Admin management (permission `settings:write`):
+
+| Method | Path                            | Description |
+| ------ | ------------------------------- | ----------- |
+| GET    | `/api/admin/service-tokens`     | `{tokens, permissions}` — records (hashes never leave the server) + assignable catalog |
+| POST   | `/api/admin/service-tokens`     | `{id, name, permissions, roleCeiling}` → `{token, record}` — the full token is shown exactly once |
+| DELETE | `/api/admin/service-tokens/{id}`| Revoke (immediate, no restart) |
+| GET    | `/api/admin/login-providers`    | `{providers}` |
+| PUT    | `/api/admin/login-providers`    | `{providers: [{id, name, url}]}` — replace the list |
 
 ## Notes
 

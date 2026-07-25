@@ -123,6 +123,30 @@ type SSOConfig struct {
 	AutoProvision bool   `yaml:"autoProvision" json:"autoProvision"`
 }
 
+// ServiceTokenRecord is a machine credential for external services
+// (SSO plugins). Unlike personal API tokens it is not a JWT: the secret
+// is bcrypt-hashed here and verified per request, so revocation is
+// instant via the users.yaml hot-reload. Permissions are explicit and
+// never derived from a role; RoleCeiling caps what roles the token may
+// assign when provisioning users.
+type ServiceTokenRecord struct {
+	ID          string    `yaml:"id" json:"id"`
+	Name        string    `yaml:"name" json:"name"`
+	TokenHash   string    `yaml:"tokenHash" json:"-"`
+	Permissions []string  `yaml:"permissions" json:"permissions"`
+	RoleCeiling string    `yaml:"roleCeiling" json:"roleCeiling"`
+	CreatedAt   time.Time `yaml:"createdAt" json:"createdAt"`
+	Revoked     bool      `yaml:"revoked,omitempty" json:"revoked"`
+}
+
+// LoginProvider is an external sign-in option rendered as a button on
+// the login page; url points at the provider's (plugin's) start route.
+type LoginProvider struct {
+	ID   string `yaml:"id" json:"id"`
+	Name string `yaml:"name" json:"name"`
+	URL  string `yaml:"url" json:"url"`
+}
+
 // PluginState is the persisted per-plugin state. In YAML it accepts the
 // legacy plain-bool form (`templates: false`) as well as the full form
 // (`templates: {enabled: true, settings: {folder: Notes/Tpl}}`).
@@ -166,21 +190,25 @@ type fileData struct {
 	SSO    *SSOConfig   `yaml:"sso,omitempty"`
 	// Plugins holds per-plugin state; an absent entry means enabled
 	// with default settings.
-	Plugins map[string]PluginState `yaml:"plugins,omitempty"`
+	Plugins        map[string]PluginState `yaml:"plugins,omitempty"`
+	ServiceTokens  []ServiceTokenRecord   `yaml:"serviceTokens,omitempty"`
+	LoginProviders []LoginProvider        `yaml:"loginProviders,omitempty"`
 }
 
 // Store holds users, groups and ACL rules backed by users.yaml.
 type Store struct {
 	path string
 
-	mu     sync.RWMutex
-	users  map[string]*UserRecord
-	order  []string // stable listing order
-	groups  []string // explicitly declared groups
-	roles   []RoleRecord
-	rules   []Rule
-	sso     SSOConfig
-	plugins map[string]PluginState
+	mu        sync.RWMutex
+	users     map[string]*UserRecord
+	order     []string // stable listing order
+	groups    []string // explicitly declared groups
+	roles     []RoleRecord
+	rules     []Rule
+	sso       SSOConfig
+	plugins   map[string]PluginState
+	svcTokens []ServiceTokenRecord
+	providers []LoginProvider
 
 	// loadedMod/loadedSize fingerprint the file as last read or written;
 	// Save refuses to clobber a file that changed since (optimistic lock
@@ -213,6 +241,8 @@ func (s *Store) Reload() error {
 			s.rules = nil
 			s.sso = SSOConfig{}
 			s.plugins = nil
+			s.svcTokens = nil
+			s.providers = nil
 			s.loadedMod, s.loadedSize = time.Time{}, 0
 			s.mu.Unlock()
 			return nil
@@ -250,6 +280,8 @@ func (s *Store) Reload() error {
 		s.sso = SSOConfig{}
 	}
 	s.plugins = data.Plugins
+	s.svcTokens = data.ServiceTokens
+	s.providers = data.LoginProviders
 	s.loadedMod, s.loadedSize = time.Time{}, 0
 	if info, err := os.Stat(s.path); err == nil {
 		s.loadedMod, s.loadedSize = info.ModTime(), info.Size()
@@ -271,7 +303,7 @@ func (s *Store) Save() error {
 		}
 	} // a missing file is fine: the first Save creates it
 
-	data := fileData{ACL: s.rules, Groups: s.groups, Roles: s.roles, Plugins: s.plugins}
+	data := fileData{ACL: s.rules, Groups: s.groups, Roles: s.roles, Plugins: s.plugins, ServiceTokens: s.svcTokens, LoginProviders: s.providers}
 	if s.sso != (SSOConfig{}) {
 		sso := s.sso
 		data.SSO = &sso
@@ -826,6 +858,119 @@ func (s *Store) pluginState(id string) PluginState {
 		return v
 	}
 	return PluginState{Enabled: true}
+}
+
+// --- service tokens --------------------------------------------------------
+
+// ServiceTokens lists service token records (hashes stripped by json tags).
+func (s *Store) ServiceTokens() []ServiceTokenRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]ServiceTokenRecord, len(s.svcTokens))
+	copy(out, s.svcTokens)
+	return out
+}
+
+// ServiceToken returns the record with the given id.
+func (s *Store) ServiceToken(id string) (ServiceTokenRecord, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.svcTokens {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return ServiceTokenRecord{}, false
+}
+
+// AddServiceToken records a new service token; ids must be unique.
+func (s *Store) AddServiceToken(t ServiceTokenRecord) error {
+	if t.ID == "" {
+		return fmt.Errorf("service token id is required")
+	}
+	s.mu.Lock()
+	for _, existing := range s.svcTokens {
+		if existing.ID == t.ID {
+			s.mu.Unlock()
+			return fmt.Errorf("service token %q already exists", t.ID)
+		}
+	}
+	s.svcTokens = append(s.svcTokens, t)
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// RevokeServiceToken marks a service token revoked; the middleware
+// rejects it on the next request (no restart needed).
+func (s *Store) RevokeServiceToken(id string) error {
+	s.mu.Lock()
+	for i := range s.svcTokens {
+		if s.svcTokens[i].ID == id {
+			s.svcTokens[i].Revoked = true
+			s.mu.Unlock()
+			return s.Save()
+		}
+	}
+	s.mu.Unlock()
+	return fmt.Errorf("service token %q not found", id)
+}
+
+// --- login providers -------------------------------------------------------
+
+// LoginProviders lists the external sign-in options for the login page.
+func (s *Store) LoginProviders() []LoginProvider {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]LoginProvider, len(s.providers))
+	copy(out, s.providers)
+	return out
+}
+
+// SetLoginProviders validates and replaces the provider list.
+func (s *Store) SetLoginProviders(list []LoginProvider) error {
+	if err := validateProviders(list); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.providers = list
+	s.mu.Unlock()
+	return s.Save()
+}
+
+// UpsertLoginProvider creates or updates a single provider by id — used
+// by SSO plugins registering themselves with login-providers:write.
+func (s *Store) UpsertLoginProvider(p LoginProvider) error {
+	if err := validateProviders([]LoginProvider{p}); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	replaced := false
+	for i := range s.providers {
+		if s.providers[i].ID == p.ID {
+			s.providers[i] = p
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		s.providers = append(s.providers, p)
+	}
+	s.mu.Unlock()
+	return s.Save()
+}
+
+func validateProviders(list []LoginProvider) error {
+	seen := map[string]bool{}
+	for i, p := range list {
+		if p.ID == "" || p.Name == "" || p.URL == "" {
+			return fmt.Errorf("login provider #%d: id, name and url are required", i)
+		}
+		if seen[p.ID] {
+			return fmt.Errorf("duplicate login provider id %q", p.ID)
+		}
+		seen[p.ID] = true
+	}
+	return nil
 }
 
 // SSO returns the current single-sign-on configuration.

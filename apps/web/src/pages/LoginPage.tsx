@@ -17,13 +17,30 @@ export function LoginPage() {
 
   const { data: status } = useQuery({ queryKey: ['auth-status'], queryFn: api.authStatus })
   const { data: sso } = useQuery({ queryKey: ['sso-status'], queryFn: api.ssoStatus })
+  const { data: providers } = useQuery({
+    queryKey: ['auth-providers'],
+    queryFn: api.authProviders,
+  })
 
-  // Finish an SSO redirect: the callback hands us a session token.
+  // Finish an SSO redirect: the built-in callback hands us a session
+  // token (?sso_token=), an external plugin a one-time code (?code=).
   useEffect(() => {
     const ssoError = searchParams.get('sso_error')
     if (ssoError) {
       setError(ssoError)
       setSearchParams({}, { replace: true })
+      return
+    }
+    const code = searchParams.get('code')
+    if (code) {
+      setSearchParams({}, { replace: true })
+      void api
+        .exchangeLoginCode(code)
+        .then((res) => {
+          setSession(res.token, res.username, res.role, res.permissions ?? [])
+          navigate('/')
+        })
+        .catch((err: Error) => setError(err.message))
       return
     }
     const ssoToken = searchParams.get('sso_token')
@@ -90,19 +107,32 @@ export function LoginPage() {
           {t('signIn')}
         </button>
 
-        {sso?.enabled && (
+        {(sso?.enabled || (providers?.providers.length ?? 0) > 0) && (
           <>
             <div className="my-4 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
               <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
               ·
               <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
             </div>
-            <a
-              href="/api/auth/sso/login"
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              <LockIcon size={15} /> {t('ssoLoginWith')} {sso.name}
-            </a>
+            <div className="space-y-2">
+              {sso?.enabled && (
+                <a
+                  href="/api/auth/sso/login"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  <LockIcon size={15} /> {t('ssoLoginWith')} {sso.name}
+                </a>
+              )}
+              {providers?.providers.map((p) => (
+                <a
+                  key={p.id}
+                  href={p.url}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  <LockIcon size={15} /> {p.name}
+                </a>
+              ))}
+            </div>
           </>
         )}
       </form>

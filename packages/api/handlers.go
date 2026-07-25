@@ -39,11 +39,15 @@ func (s *Server) internalError(c *gin.Context, err error) {
 }
 
 // actor returns the authenticated username ("" when auth is disabled).
+// Service-token calls are attributed as "svc:<id>".
 func actor(c *gin.Context) string {
 	if v, ok := c.Get("user"); ok {
 		if claims, ok := v.(*auth.Claims); ok {
 			return claims.Username
 		}
+	}
+	if rec, ok := serviceTokenOf(c); ok {
+		return "svc:" + rec.ID
 	}
 	return ""
 }
