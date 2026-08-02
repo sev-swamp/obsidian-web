@@ -4,15 +4,19 @@
 # container is up.
 #
 # Usage:
-#   OBSIDIANWEB_DEPLOY_HOST=root@1.2.3.4 scripts/deploy.sh
+#   OBSIDIANWEB_DEPLOY_HOST=root@1.2.3.4 scripts/deploy.sh [branch]
 #   (or put the export into your shell profile / .env)
+#
+# The branch defaults to main; pass it as the first argument or via
+# OBSIDIANWEB_DEPLOY_BRANCH to deploy a feature branch instead.
 set -euo pipefail
 
 HOST="${OBSIDIANWEB_DEPLOY_HOST:?set OBSIDIANWEB_DEPLOY_HOST, e.g. root@1.2.3.4}"
 DIR="${OBSIDIANWEB_DEPLOY_DIR:-obsidian-web}"
+BRANCH="${1:-${OBSIDIANWEB_DEPLOY_BRANCH:-main}}"
 
-echo "==> starting detached build on $HOST"
-ssh "$HOST" "cd ~/$DIR && git pull -q && (nohup docker compose up -d --build > /tmp/owdeploy.log 2>&1 &) && git log --oneline -1"
+echo "==> starting detached build on $HOST (branch: $BRANCH)"
+ssh "$HOST" "cd ~/$DIR && git fetch -q origin '$BRANCH' && git checkout -q '$BRANCH' && git pull -q origin '$BRANCH' && (nohup docker compose up -d --build > /tmp/owdeploy.log 2>&1 &) && git log --oneline -1"
 
 echo "==> waiting for the container to restart (builds take up to ~10 min)"
 for _ in $(seq 1 60); do

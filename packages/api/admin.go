@@ -340,46 +340,6 @@ func (s *Server) handleAdminDeleteGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"groups": store.Groups()})
 }
 
-// --- SSO configuration (admin) ---------------------------------------------
-
-func (s *Server) handleAdminGetSSO(c *gin.Context) {
-	store := s.aclOr503(c)
-	if store == nil {
-		return
-	}
-	cfg := store.SSO()
-	// Never expose the secret; report only whether one is set.
-	hasSecret := cfg.ClientSecret != ""
-	cfg.ClientSecret = ""
-	c.JSON(http.StatusOK, gin.H{"sso": cfg, "hasSecret": hasSecret})
-}
-
-func (s *Server) handleAdminPutSSO(c *gin.Context) {
-	store := s.aclOr503(c)
-	if store == nil {
-		return
-	}
-	var req struct {
-		SSO acl.SSOConfig `json:"sso"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.SSO.DefaultRole != "" && !s.roleKnown(req.SSO.DefaultRole) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown defaultRole: " + req.SSO.DefaultRole})
-		return
-	}
-	if err := store.SetSSO(req.SSO); err != nil {
-		s.storeError(c, err, http.StatusBadRequest)
-		return
-	}
-	s.audit(c, "sso.update", "enabled", req.SSO.Enabled, "issuer", req.SSO.Issuer)
-	cfg := store.SSO()
-	cfg.ClientSecret = ""
-	c.JSON(http.StatusOK, gin.H{"sso": cfg})
-}
-
 // --- roles ------------------------------------------------------------------
 
 // roleKnown reports whether a role name is defined (dynamic store first,

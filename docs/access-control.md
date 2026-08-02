@@ -68,20 +68,19 @@ Groups are declared in users.yaml (`groups:` list) or from the Groups
 tab in the settings UI; deleting a group also strips it from every
 user. Membership is edited per user (Users tab).
 
-## SSO (OpenID Connect)
+## SSO (external plugins)
 
-A generic OIDC provider (Google, Keycloak, Authentik, Azure AD…) is
-configured from the SSO tab in the settings UI and stored in
-users.yaml:
+SSO is handled by **external plugins**, not the core (see
+docs/sso-plugin.md and plans/04-sso-plugin.md). A plugin authenticates
+to the platform with a service token, provisions an SSO-only account
+(`POST /api/service/users`) and mints a one-time login code
+(`POST /api/service/login-code`); the browser exchanges the code for a
+session at `POST /api/auth/code`. The login page lists plugins from
+`GET /api/auth/providers`, and admins manage service tokens and login
+buttons under Settings → SSO.
 
-- issuer URL, client ID/secret, redirect URL (empty = auto
-  `<host>/api/auth/sso/callback` — register this in the provider);
-- `autoProvision` creates an account on first sign-in with
-  `defaultRole`; provisioned accounts have no password and can sign in
-  only through the provider;
-- the login page shows a "Sign in with <name>" button when enabled.
-
-Flow: `/api/auth/sso/login` → provider → `/api/auth/sso/callback`
-(state-cookie CSRF check, id_token verification) → platform session
-JWT. `auth.IdentityProvider` remains the extension point for
-non-OIDC providers.
+The reference OIDC plugin (Google, Keycloak, Authentik, Azure AD…) lives
+in `plugins/sso-oidc/`. The built-in OIDC support was removed once the
+plugin reached parity; carry an old users.yaml `sso:` block over with
+`obsidianweb-cli migrate-sso -users <path>` (the inert block can then be
+deleted).

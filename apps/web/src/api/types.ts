@@ -150,17 +150,6 @@ export interface RoleRecord {
   builtin: boolean
 }
 
-export interface SsoConfig {
-  enabled: boolean
-  name: string
-  issuer: string
-  clientId: string
-  clientSecret?: string
-  redirectUrl: string
-  defaultRole: string
-  autoProvision: boolean
-}
-
 /** Machine credential for external auth plugins (plan 4). */
 export interface ServiceTokenRecord {
   id: string

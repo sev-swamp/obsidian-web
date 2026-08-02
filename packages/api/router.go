@@ -78,12 +78,11 @@ func (s *Server) Router() *gin.Engine {
 	})
 	r.POST("/api/auth/login", s.handleLogin)
 	r.GET("/api/auth/status", s.handleAuthStatus)
-	r.GET("/api/auth/sso/status", s.handleSSOStatus)
-	r.GET("/api/auth/sso/login", s.handleSSOLogin)
-	r.GET("/api/auth/sso/callback", s.handleSSOCallback)
+	// SSO is handled by external plugins (plan 4): a plugin mints a
+	// one-time login code via the service API; the browser exchanges it
+	// here, and the login page lists plugins from /api/auth/providers.
 	r.POST("/api/auth/code", s.handleAuthCode)
 	r.GET("/api/auth/providers", s.handleAuthProviders)
-	r.GET("/api/auth/me", s.requirePermission(auth.PermNotesRead), s.handleMe)
 
 	// Service API for external auth plugins: authenticated by service
 	// tokens only (never JWTs), each route with its explicit permission.
@@ -161,8 +160,6 @@ func (s *Server) Router() *gin.Engine {
 		admin.POST("/roles", s.handleAdminCreateRole)
 		admin.PUT("/roles/:name", s.handleAdminUpdateRole)
 		admin.DELETE("/roles/:name", s.handleAdminDeleteRole)
-		admin.GET("/sso", s.handleAdminGetSSO)
-		admin.PUT("/sso", s.handleAdminPutSSO)
 		admin.GET("/service-tokens", s.handleAdminListServiceTokens)
 		admin.POST("/service-tokens", s.handleAdminCreateServiceToken)
 		admin.DELETE("/service-tokens/:id", s.handleAdminRevokeServiceToken)
