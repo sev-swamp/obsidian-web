@@ -789,6 +789,16 @@ func (s *Store) PluginEnabled(id string) bool {
 	return true
 }
 
+// PluginConfigured reports whether a plugin has an explicit persisted state.
+// It lets legacy config provide a bootstrap default without overwriting a
+// choice subsequently made in the web interface.
+func (s *Store) PluginConfigured(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.plugins[id]
+	return ok
+}
+
 // SetPluginEnabled toggles and persists a plugin's enabled state,
 // keeping its settings intact.
 func (s *Store) SetPluginEnabled(id string, enabled bool) error {

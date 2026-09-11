@@ -75,3 +75,11 @@ type Plugin interface {
 	// Close is called on graceful shutdown.
 	Close() error
 }
+
+// Toggleable is implemented by backend plugins that own a runtime capability.
+// Init registers static routes; Enable and Disable are called when an admin
+// changes the plugin state from the web interface.
+type Toggleable interface {
+	Enable() error
+	Disable() error
+}

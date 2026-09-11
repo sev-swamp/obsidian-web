@@ -48,6 +48,7 @@ type NoteService struct {
 
 	history     History
 	extDebounce time.Duration
+	historyMu   sync.RWMutex
 
 	lockMu sync.Mutex
 	locks  map[string]*sync.Mutex
@@ -79,12 +80,46 @@ func NewNoteService(fs VaultFS, renderer Renderer, links LinkIndex, search Searc
 // AttachHistory enables change history. externalDebounce coalesces
 // bursts of direct file-system edits into single revisions.
 func (s *NoteService) AttachHistory(h History, externalDebounce time.Duration) {
+	s.SetHistory(h, externalDebounce)
+}
+
+// SetHistory attaches an optional history capability. It is safe to call at
+// runtime, which lets a built-in plugin enable history without restarting the
+// note service.
+func (s *NoteService) SetHistory(h History, externalDebounce time.Duration) {
+	s.historyMu.Lock()
+	defer s.historyMu.Unlock()
 	s.history = h
 	s.extDebounce = externalDebounce
 }
 
+// DetachHistory removes h only when it is the currently attached backend.
+// Timers for external filesystem edits are cancelled so disabling history
+// cannot schedule a later Git write.
+func (s *NoteService) DetachHistory(h History) {
+	s.historyMu.Lock()
+	if s.history != h {
+		s.historyMu.Unlock()
+		return
+	}
+	s.history = nil
+	s.extDebounce = 0
+	s.historyMu.Unlock()
+
+	s.extMu.Lock()
+	for p, timer := range s.extTimers {
+		timer.Stop()
+		delete(s.extTimers, p)
+	}
+	s.extMu.Unlock()
+}
+
 // History returns the attached history backend (nil when disabled).
-func (s *NoteService) History() History { return s.history }
+func (s *NoteService) History() History {
+	s.historyMu.RLock()
+	defer s.historyMu.RUnlock()
+	return s.history
+}
 
 func (s *NoteService) Rules() NoteRules {
 	s.mu.RLock()
@@ -185,8 +220,8 @@ func (s *NoteService) SaveNote(actor, p, content, baseHash string) error {
 				CurrentHash:    HashContent(current),
 				CurrentContent: string(current),
 			}
-			if s.history != nil {
-				if revs, err := s.history.Log(p, 1); err == nil && len(revs) > 0 {
+			if h := s.History(); h != nil {
+				if revs, err := h.Log(p, 1); err == nil && len(revs) > 0 {
 					conflict.ChangedBy = revs[0].Actor
 					conflict.ChangedAt = revs[0].Time
 				}
@@ -334,11 +369,15 @@ func (s *NoteService) DeleteNote(actor, p string) error {
 // ErrRestoreUnchanged is returned so the caller can say so instead of
 // pretending a restore happened.
 func (s *NoteService) RestoreNote(actor, p, rev string) error {
-	if s.history == nil {
-		return fmt.Errorf("history is disabled")
+	s.historyMu.RLock()
+	h := s.history
+	if h == nil {
+		s.historyMu.RUnlock()
+		return ErrHistoryDisabled
 	}
+	defer s.historyMu.RUnlock()
 	p = NormalizeNotePath(p)
-	content, err := s.history.FileAt(p, rev)
+	content, err := h.FileAt(p, rev)
 	if err != nil {
 		return err
 	}
@@ -376,18 +415,20 @@ func (s *NoteService) RestoreNote(actor, p, rev string) error {
 
 // Trash lists restorable deleted files.
 func (s *NoteService) Trash(limit int) ([]DeletedFile, error) {
-	if s.history == nil {
+	h := s.History()
+	if h == nil {
 		return nil, nil
 	}
-	return s.history.Deleted(limit)
+	return h.Deleted(limit)
 }
 
 // RestoreDeleted restores a file from the trash.
 func (s *NoteService) RestoreDeleted(actor, p string) error {
-	if s.history == nil {
-		return fmt.Errorf("history is disabled")
+	h := s.History()
+	if h == nil {
+		return ErrHistoryDisabled
 	}
-	deleted, err := s.history.Deleted(0)
+	deleted, err := h.Deleted(0)
 	if err != nil {
 		return err
 	}
@@ -402,10 +443,11 @@ func (s *NoteService) RestoreDeleted(actor, p string) error {
 // PurgeTrash permanently removes paths from the trash. Paths that are
 // not in the trash are silently ignored.
 func (s *NoteService) PurgeTrash(paths []string) error {
-	if s.history == nil {
-		return fmt.Errorf("history is disabled")
+	h := s.History()
+	if h == nil {
+		return ErrHistoryDisabled
 	}
-	return s.history.PurgeDeleted(paths)
+	return h.PurgeDeleted(paths)
 }
 
 // record writes a history revision (no-op when history is disabled).
@@ -416,6 +458,8 @@ func (s *NoteService) record(actor, p, action string) {
 // recordDetail is record with action-specific context (the source
 // revision for restores).
 func (s *NoteService) recordDetail(actor, p, action, detail string) {
+	s.historyMu.RLock()
+	defer s.historyMu.RUnlock()
 	if s.history == nil {
 		return
 	}
@@ -429,10 +473,13 @@ func (s *NoteService) recordDetail(actor, p, action, detail string) {
 
 // recordExternalDebounced coalesces direct file-system edit bursts.
 func (s *NoteService) recordExternalDebounced(p string) {
-	if s.history == nil {
+	s.historyMu.RLock()
+	enabled := s.history != nil
+	debounce := s.extDebounce
+	s.historyMu.RUnlock()
+	if !enabled {
 		return
 	}
-	debounce := s.extDebounce
 	if debounce <= 0 {
 		debounce = 45 * time.Second
 	}

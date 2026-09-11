@@ -81,7 +81,6 @@ export interface PropertyInfo {
 export interface Settings {
   notes: NoteRules
   vault: { templatesDir: string; attachmentsDir: string }
-  history: { enabled: boolean; mode: 'managed' | 'external' | '' }
 }
 
 export interface CreateNoteRequest {

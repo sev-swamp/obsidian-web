@@ -456,7 +456,13 @@ func invalidPermissions(perms []string) string {
 // pluginEnabled resolves the persisted enabled state (default: on).
 func (s *Server) pluginEnabled(id string) bool {
 	if s.ACL == nil {
+		if id == "git-history" {
+			return s.Config.History.Enabled && s.Config.History.Mode != "off"
+		}
 		return true
+	}
+	if id == "git-history" && !s.ACL.PluginConfigured(id) {
+		return s.Config.History.Enabled && s.Config.History.Mode != "off"
 	}
 	return s.ACL.PluginEnabled(id)
 }
@@ -483,6 +489,8 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled (boolean) and/or settings (object) is required"})
 		return
 	}
+	wasEnabled := s.pluginEnabled(id)
+	previousSettings := store.PluginSettings(id)
 	if req.Settings != nil {
 		// Only keys the plugin declares in its manifest are accepted.
 		known := map[string]bool{}
@@ -499,11 +507,26 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 			s.storeError(c, err, http.StatusInternalServerError)
 			return
 		}
+		if err := s.Plugins.Restart(id); err != nil {
+			_ = store.SetPluginSettings(id, previousSettings)
+			if wasEnabled {
+				_ = s.Plugins.SetEnabled(id, true)
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		s.audit(c, "plugin.settings", "plugin", id)
 	}
 	if req.Enabled != nil {
 		if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
 			s.storeError(c, err, http.StatusInternalServerError)
+			return
+		}
+		if err := s.Plugins.SetEnabled(id, *req.Enabled); err != nil {
+			// The stored state must match the running capability. Restore the
+			// previous effective state when activation failed.
+			_ = store.SetPluginEnabled(id, wasEnabled)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		s.audit(c, "plugin.toggle", "plugin", id, "enabled", *req.Enabled)

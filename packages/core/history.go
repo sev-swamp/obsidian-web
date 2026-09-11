@@ -57,6 +57,11 @@ type History interface {
 // silently answering "restored".
 var ErrRestoreUnchanged = fmt.Errorf("content already matches the revision")
 
+// ErrHistoryDisabled is returned when an optional history backend is not
+// attached. History is a capability: disabling it must never prevent normal
+// note mutations, but history-only operations must fail explicitly.
+var ErrHistoryDisabled = fmt.Errorf("history is disabled")
+
 // ConflictError is returned by SaveNote when the note changed since the
 // client loaded it (optimistic locking).
 type ConflictError struct {

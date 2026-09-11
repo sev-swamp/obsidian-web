@@ -58,20 +58,28 @@ export function NotePage() {
 
   const canEdit = can('notes:edit') && note?.access !== 'read'
   const canDelete = can('notes:delete') && note?.access !== 'read'
-  const canHistory = can('history:read')
-
-  // With history disabled or managed externally nothing lands in the
-  // trash — deletion must warn that it is unrecoverable.
+  const { data: pluginList } = useQuery({
+    queryKey: ['plugins'],
+    queryFn: api.plugins,
+    staleTime: 60_000,
+  })
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.settings,
     staleTime: 60_000,
   })
-  const deleteWarning = !settings
+  const historyPlugin = pluginList?.find((plugin) => plugin.id === 'git-history')
+  const historyEnabled = historyPlugin?.enabled ?? false
+  const canHistory = historyEnabled && can('history:read')
+  const historyMode = historyPlugin?.settings?.mode
+
+  // With Git history disabled or externally managed, deletion cannot be
+  // restored through the web application.
+  const deleteWarning = !pluginList
     ? undefined
-    : !settings.history.enabled
+    : !historyEnabled
       ? t('deleteNoHistoryWarning')
-      : settings.history.mode === 'external'
+      : historyMode === 'external'
         ? t('deleteExternalHistoryWarning')
         : undefined
 
