@@ -1,11 +1,12 @@
 # План 4. SSO как внешний плагин (сервисные токены + login-code)
 
-Статус: этапы 1–4 реализованы (сервисные токены, /api/service/users,
-login-code, loginProviders; встроенный SSO работает параллельно).
-Этапы 5–6 (эталонный плагин sso-oidc, миграция и выпил встроенного SSO)
-— не начаты.
-Приоритет: средний — встроенный OIDC работает; план выносит его из ядра
-и открывает дорогу другим провайдерам (SAML, LDAP-мост, второй OIDC).
+Статус: РЕАЛИЗОВАН ПОЛНОСТЬЮ. Этапы 1–4 (сервисные токены,
+/api/service/users, login-code, loginProviders). Этап 5 — эталонный
+плагин `plugins/sso-oidc/` (отдельный go-модуль, Dockerfile, compose).
+Этап 6 — встроенный SSO выпилен из ядра (auth/oidc.go, api/sso.go,
+acl.SSOConfig, /api/auth/sso/*, /api/auth/me, admin /sso), go-oidc/oauth2
+убраны из go.mod; CLI `obsidianweb-cli migrate-sso` переносит конфиг.
+Приоритет: закрыт.
 Зависимости: план 2 (реализован: users.yaml, tokenVersion, API-токены,
 встроенный OIDC).
 

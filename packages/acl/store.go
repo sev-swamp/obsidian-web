@@ -110,19 +110,6 @@ type RoleRecord struct {
 	BuiltIn bool `yaml:"-" json:"builtin"`
 }
 
-// SSOConfig is the OIDC single-sign-on configuration, editable from
-// the settings UI and stored alongside users.
-type SSOConfig struct {
-	Enabled       bool   `yaml:"enabled" json:"enabled"`
-	Name          string `yaml:"name" json:"name"` // button label, e.g. "Keycloak"
-	Issuer        string `yaml:"issuer" json:"issuer"`
-	ClientID      string `yaml:"clientId" json:"clientId"`
-	ClientSecret  string `yaml:"clientSecret" json:"clientSecret,omitempty"`
-	RedirectURL   string `yaml:"redirectUrl" json:"redirectUrl"`
-	DefaultRole   string `yaml:"defaultRole" json:"defaultRole"`
-	AutoProvision bool   `yaml:"autoProvision" json:"autoProvision"`
-}
-
 // ServiceTokenRecord is a machine credential for external services
 // (SSO plugins). Unlike personal API tokens it is not a JWT: the secret
 // is bcrypt-hashed here and verified per request, so revocation is
@@ -187,7 +174,8 @@ type fileData struct {
 	Groups []string     `yaml:"groups"`
 	Roles  []RoleRecord `yaml:"roles,omitempty"`
 	ACL    []Rule       `yaml:"acl"`
-	SSO    *SSOConfig   `yaml:"sso,omitempty"`
+	// A legacy `sso:` block (built-in SSO, removed in plan 4) is ignored
+	// by the non-strict parser and dropped on the next Save.
 	// Plugins holds per-plugin state; an absent entry means enabled
 	// with default settings.
 	Plugins        map[string]PluginState `yaml:"plugins,omitempty"`
@@ -205,7 +193,6 @@ type Store struct {
 	groups    []string // explicitly declared groups
 	roles     []RoleRecord
 	rules     []Rule
-	sso       SSOConfig
 	plugins   map[string]PluginState
 	svcTokens []ServiceTokenRecord
 	providers []LoginProvider
@@ -239,7 +226,6 @@ func (s *Store) Reload() error {
 			s.groups = nil
 			s.roles = nil
 			s.rules = nil
-			s.sso = SSOConfig{}
 			s.plugins = nil
 			s.svcTokens = nil
 			s.providers = nil
@@ -274,11 +260,6 @@ func (s *Store) Reload() error {
 	s.groups = data.Groups
 	s.roles = data.Roles
 	s.rules = data.ACL
-	if data.SSO != nil {
-		s.sso = *data.SSO
-	} else {
-		s.sso = SSOConfig{}
-	}
 	s.plugins = data.Plugins
 	s.svcTokens = data.ServiceTokens
 	s.providers = data.LoginProviders
@@ -304,10 +285,6 @@ func (s *Store) Save() error {
 	} // a missing file is fine: the first Save creates it
 
 	data := fileData{ACL: s.rules, Groups: s.groups, Roles: s.roles, Plugins: s.plugins, ServiceTokens: s.svcTokens, LoginProviders: s.providers}
-	if s.sso != (SSOConfig{}) {
-		sso := s.sso
-		data.SSO = &sso
-	}
 	for _, name := range s.order {
 		data.Users = append(data.Users, *s.users[name])
 	}
@@ -812,6 +789,16 @@ func (s *Store) PluginEnabled(id string) bool {
 	return true
 }
 
+// PluginConfigured reports whether a plugin has an explicit persisted state.
+// It lets legacy config provide a bootstrap default without overwriting a
+// choice subsequently made in the web interface.
+func (s *Store) PluginConfigured(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.plugins[id]
+	return ok
+}
+
 // SetPluginEnabled toggles and persists a plugin's enabled state,
 // keeping its settings intact.
 func (s *Store) SetPluginEnabled(id string, enabled bool) error {
@@ -971,27 +958,4 @@ func validateProviders(list []LoginProvider) error {
 		seen[p.ID] = true
 	}
 	return nil
-}
-
-// SSO returns the current single-sign-on configuration.
-func (s *Store) SSO() SSOConfig {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sso
-}
-
-// SetSSO validates and persists the SSO configuration.
-func (s *Store) SetSSO(cfg SSOConfig) error {
-	if cfg.Enabled && (cfg.Issuer == "" || cfg.ClientID == "") {
-		return fmt.Errorf("issuer and clientId are required to enable SSO")
-	}
-	s.mu.Lock()
-	// An empty secret in the update keeps the stored one (the UI never
-	// receives the secret back).
-	if cfg.ClientSecret == "" {
-		cfg.ClientSecret = s.sso.ClientSecret
-	}
-	s.sso = cfg
-	s.mu.Unlock()
-	return s.Save()
 }

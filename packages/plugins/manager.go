@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 
@@ -34,7 +35,7 @@ type PluginStatus struct {
 	Enabled     bool   `json:"enabled"`
 	// Settings are the effective values (stored or manifest default)
 	// for the settings declared in SettingsSpec.
-	Settings     map[string]string     `json:"settings,omitempty"`
+	Settings     map[string]string       `json:"settings,omitempty"`
 	SettingsSpec []pluginsdk.SettingSpec `json:"settingsSpec,omitempty"`
 }
 
@@ -48,6 +49,9 @@ type Manager struct {
 	uiPlugins []UIPlugin
 	// settings resolves stored per-plugin settings; nil = nothing stored.
 	settings func(id string) map[string]string
+	mu       sync.Mutex
+	hosts    map[string]pluginsdk.Host
+	active   map[string]bool
 }
 
 // NewManager creates a plugin manager.
@@ -55,7 +59,7 @@ func NewManager(bus core.EventBus, notes *core.NoteService, vault core.VaultFS, 
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Manager{bus: bus, notes: notes, vault: vault, log: log}
+	return &Manager{bus: bus, notes: notes, vault: vault, log: log, hosts: map[string]pluginsdk.Host{}, active: map[string]bool{}}
 }
 
 // Register adds a plugin; call before InitAll.
@@ -184,13 +188,82 @@ func (m *Manager) InitAll(routerGroup *gin.RouterGroup, enabled func(id string) 
 		if err := p.Init(host); err != nil {
 			return fmt.Errorf("plugin %s: %w", manifest.ID, err)
 		}
+		m.hosts[id] = host
+		if enabled == nil || enabled(id) {
+			if err := m.setActiveLocked(id, p, true); err != nil {
+				return fmt.Errorf("enable plugin %s: %w", id, err)
+			}
+		}
 		m.log.Info("plugin initialized", "plugin", manifest.ID, "version", manifest.Version)
 	}
 	return nil
 }
 
+// SetEnabled starts or stops a toggleable plugin. The manager serializes
+// lifecycle calls so an admin toggle cannot race another toggle.
+func (m *Manager) SetEnabled(id string, enabled bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.plugins {
+		if p.Manifest().ID == id {
+			return m.setActiveLocked(id, p, enabled)
+		}
+	}
+	return fmt.Errorf("unknown plugin: %s", id)
+}
+
+// Restart reapplies settings for an active toggleable plugin. Disabled
+// plugins remain disabled; changing their settings must not unexpectedly
+// start a capability.
+func (m *Manager) Restart(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.plugins {
+		if p.Manifest().ID != id {
+			continue
+		}
+		if !m.active[id] {
+			return nil
+		}
+		if err := m.setActiveLocked(id, p, false); err != nil {
+			return err
+		}
+		return m.setActiveLocked(id, p, true)
+	}
+	return fmt.Errorf("unknown plugin: %s", id)
+}
+
+func (m *Manager) setActiveLocked(id string, p pluginsdk.Plugin, enabled bool) error {
+	t, ok := p.(pluginsdk.Toggleable)
+	if !ok {
+		m.active[id] = enabled
+		return nil
+	}
+	if m.active[id] == enabled {
+		return nil
+	}
+	if enabled {
+		if err := t.Enable(); err != nil {
+			return err
+		}
+	} else if err := t.Disable(); err != nil {
+		return err
+	}
+	m.active[id] = enabled
+	return nil
+}
+
 // CloseAll shuts plugins down.
 func (m *Manager) CloseAll() {
+	m.mu.Lock()
+	for _, p := range m.plugins {
+		if m.active[p.Manifest().ID] {
+			if err := m.setActiveLocked(p.Manifest().ID, p, false); err != nil {
+				m.log.Warn("plugin disable failed", "plugin", p.Manifest().ID, "error", err)
+			}
+		}
+	}
+	m.mu.Unlock()
 	for _, p := range m.plugins {
 		if err := p.Close(); err != nil {
 			m.log.Warn("plugin close failed", "plugin", p.Manifest().ID, "error", err)
@@ -214,12 +287,12 @@ type host struct {
 	log     *slog.Logger
 }
 
-func (h *host) Events() core.EventBus       { return h.manager.bus }
-func (h *host) Notes() *core.NoteService    { return h.manager.notes }
-func (h *host) Vault() core.VaultFS         { return h.manager.vault }
-func (h *host) Routes() pluginsdk.Routes    { return h.routes }
+func (h *host) Events() core.EventBus        { return h.manager.bus }
+func (h *host) Notes() *core.NoteService     { return h.manager.notes }
+func (h *host) Vault() core.VaultFS          { return h.manager.vault }
+func (h *host) Routes() pluginsdk.Routes     { return h.routes }
 func (h *host) Settings() pluginsdk.Settings { return &hostSettings{manager: h.manager, id: h.id} }
-func (h *host) Logger() *slog.Logger        { return h.log }
+func (h *host) Logger() *slog.Logger         { return h.log }
 
 // hostSettings resolves plugin settings per call: stored value first,
 // manifest default otherwise, so admin edits apply without a restart.

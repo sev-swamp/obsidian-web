@@ -95,7 +95,12 @@ Admin management (permission `settings:write`):
 | GET    | `/api/attachment/{path}` | `notes:read`   | Raw file (images, PDF, audio, video; supports Range) |
 | POST   | `/api/upload`            | `files:upload` | multipart `file` (+ optional `folder`) → `{path}` |
 
-## History & trash
+## Git history plugin & trash
+
+These endpoints are available only while the built-in `git-history` plugin is
+enabled in Settings → Plugins; otherwise they return 404. Its persisted plugin
+state has priority over the legacy `history:` config, which is used only as a
+bootstrap default.
 
 | Method | Path                     | Permission     | Description                                   |
 | ------ | ------------------------ | -------------- | --------------------------------------------- |
@@ -116,7 +121,7 @@ hides the entry — the note's content remains reachable through history.
 
 | Method | Path                    | Permission       | Description                             |
 | ------ | ----------------------- | ---------------- | --------------------------------------- |
-| GET    | `/api/settings`         | `notes:read`     | Note rules + vault dirs + history `{enabled, mode}` |
+| GET    | `/api/settings`         | `notes:read`     | Note rules + vault dirs; optional capabilities are in `/api/plugins` |
 | PUT    | `/api/settings`         | `settings:write` | `{notes: NoteRules}` — persisted to config |
 | GET    | `/api/health`           | —                | Liveness                                |
 | GET    | `/api/obsidian/plugins` | `notes:read`     | Installed Obsidian community plugins    |

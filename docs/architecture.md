@@ -85,5 +85,8 @@ incrementally; losing them costs one re-index, never data.
 - Debounced watcher: editor save bursts collapse into one event.
 - Background initial index: the server accepts requests while indexing.
 - Frontend: TanStack Query caching + WebSocket-driven invalidation.
+- Git-backed revisions are an optional built-in `git-history` plugin. It
+  attaches the `core.History` capability only while enabled from the web UI;
+  note persistence itself never depends on Git history.
 
 Key decisions are recorded in [docs/adr/](adr/).

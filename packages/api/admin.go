@@ -340,46 +340,6 @@ func (s *Server) handleAdminDeleteGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"groups": store.Groups()})
 }
 
-// --- SSO configuration (admin) ---------------------------------------------
-
-func (s *Server) handleAdminGetSSO(c *gin.Context) {
-	store := s.aclOr503(c)
-	if store == nil {
-		return
-	}
-	cfg := store.SSO()
-	// Never expose the secret; report only whether one is set.
-	hasSecret := cfg.ClientSecret != ""
-	cfg.ClientSecret = ""
-	c.JSON(http.StatusOK, gin.H{"sso": cfg, "hasSecret": hasSecret})
-}
-
-func (s *Server) handleAdminPutSSO(c *gin.Context) {
-	store := s.aclOr503(c)
-	if store == nil {
-		return
-	}
-	var req struct {
-		SSO acl.SSOConfig `json:"sso"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.SSO.DefaultRole != "" && !s.roleKnown(req.SSO.DefaultRole) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown defaultRole: " + req.SSO.DefaultRole})
-		return
-	}
-	if err := store.SetSSO(req.SSO); err != nil {
-		s.storeError(c, err, http.StatusBadRequest)
-		return
-	}
-	s.audit(c, "sso.update", "enabled", req.SSO.Enabled, "issuer", req.SSO.Issuer)
-	cfg := store.SSO()
-	cfg.ClientSecret = ""
-	c.JSON(http.StatusOK, gin.H{"sso": cfg})
-}
-
 // --- roles ------------------------------------------------------------------
 
 // roleKnown reports whether a role name is defined (dynamic store first,
@@ -496,7 +456,13 @@ func invalidPermissions(perms []string) string {
 // pluginEnabled resolves the persisted enabled state (default: on).
 func (s *Server) pluginEnabled(id string) bool {
 	if s.ACL == nil {
+		if id == "git-history" {
+			return s.Config.History.Enabled && s.Config.History.Mode != "off"
+		}
 		return true
+	}
+	if id == "git-history" && !s.ACL.PluginConfigured(id) {
+		return s.Config.History.Enabled && s.Config.History.Mode != "off"
 	}
 	return s.ACL.PluginEnabled(id)
 }
@@ -523,6 +489,8 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled (boolean) and/or settings (object) is required"})
 		return
 	}
+	wasEnabled := s.pluginEnabled(id)
+	previousSettings := store.PluginSettings(id)
 	if req.Settings != nil {
 		// Only keys the plugin declares in its manifest are accepted.
 		known := map[string]bool{}
@@ -539,11 +507,26 @@ func (s *Server) handleAdminSetPlugin(c *gin.Context) {
 			s.storeError(c, err, http.StatusInternalServerError)
 			return
 		}
+		if err := s.Plugins.Restart(id); err != nil {
+			_ = store.SetPluginSettings(id, previousSettings)
+			if wasEnabled {
+				_ = s.Plugins.SetEnabled(id, true)
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		s.audit(c, "plugin.settings", "plugin", id)
 	}
 	if req.Enabled != nil {
 		if err := store.SetPluginEnabled(id, *req.Enabled); err != nil {
 			s.storeError(c, err, http.StatusInternalServerError)
+			return
+		}
+		if err := s.Plugins.SetEnabled(id, *req.Enabled); err != nil {
+			// The stored state must match the running capability. Restore the
+			// previous effective state when activation failed.
+			_ = store.SetPluginEnabled(id, wasEnabled)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		s.audit(c, "plugin.toggle", "plugin", id, "enabled", *req.Enabled)

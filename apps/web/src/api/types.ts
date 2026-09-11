@@ -81,7 +81,6 @@ export interface PropertyInfo {
 export interface Settings {
   notes: NoteRules
   vault: { templatesDir: string; attachmentsDir: string }
-  history: { enabled: boolean; mode: 'managed' | 'external' | '' }
 }
 
 export interface CreateNoteRequest {
@@ -148,17 +147,6 @@ export interface RoleRecord {
   description: string
   permissions: string[]
   builtin: boolean
-}
-
-export interface SsoConfig {
-  enabled: boolean
-  name: string
-  issuer: string
-  clientId: string
-  clientSecret?: string
-  redirectUrl: string
-  defaultRole: string
-  autoProvision: boolean
 }
 
 /** Machine credential for external auth plugins (plan 4). */

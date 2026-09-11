@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import type { AclRule, LoginProvider, SsoConfig } from '../api/types'
+import type { AclRule, LoginProvider } from '../api/types'
 import { useAuthStore, type Permission } from '../store/auth'
 import { usePrefsStore } from '../store/prefs'
 import { useT, type TKey } from '../i18n'
@@ -69,7 +69,6 @@ export function SettingsPage() {
         {tab === 'plugins' && <PluginsSection />}
         {tab === 'sso' && (
           <>
-            <SsoSection />
             <LoginProvidersSection />
             <ServiceTokensSection />
           </>
@@ -944,131 +943,6 @@ function PluginRow({
         </div>
       )}
     </div>
-  )
-}
-
-/* ---------------------------------------------------------------- */
-/* SSO                                                                */
-/* ---------------------------------------------------------------- */
-
-function SsoSection() {
-  const t = useT()
-  const toast = useToast()
-  const queryClient = useQueryClient()
-  const { data } = useQuery({ queryKey: ['admin-sso'], queryFn: api.adminGetSSO })
-
-  const [form, setForm] = useState<SsoConfig | null>(null)
-  const cfg: SsoConfig = form ??
-    data?.sso ?? {
-      enabled: false,
-      name: '',
-      issuer: '',
-      clientId: '',
-      redirectUrl: '',
-      defaultRole: 'viewer',
-      autoProvision: true,
-    }
-
-  const save = useMutation({
-    mutationFn: () => api.adminPutSSO(cfg),
-    onSuccess: () => {
-      setForm(null)
-      void queryClient.invalidateQueries({ queryKey: ['admin-sso'] })
-      toast(t('savedSuccessfully'))
-    },
-  })
-
-  const set = (patch: Partial<SsoConfig>) => setForm({ ...cfg, ...patch })
-
-  return (
-    <section className="max-w-xl space-y-3">
-      <label className="flex items-center gap-2 text-sm font-medium">
-        <input
-          type="checkbox"
-          checked={cfg.enabled}
-          onChange={(e) => set({ enabled: e.target.checked })}
-          className="accent-violet-600"
-        />
-        {t('ssoEnabledLabel')}
-      </label>
-
-      <label className="block text-sm text-gray-600 dark:text-gray-400">
-        {t('ssoNameLabel')}
-        <input
-          className={`${inputCls} mt-1`}
-          value={cfg.name}
-          onChange={(e) => set({ name: e.target.value })}
-          placeholder="Keycloak / Google / …"
-        />
-      </label>
-      <label className="block text-sm text-gray-600 dark:text-gray-400">
-        {t('issuerLabel')}
-        <input
-          className={`${inputCls} mt-1`}
-          value={cfg.issuer}
-          onChange={(e) => set({ issuer: e.target.value })}
-          placeholder="https://accounts.google.com"
-        />
-      </label>
-      <label className="block text-sm text-gray-600 dark:text-gray-400">
-        {t('clientIdLabel')}
-        <input
-          className={`${inputCls} mt-1`}
-          value={cfg.clientId}
-          onChange={(e) => set({ clientId: e.target.value })}
-        />
-      </label>
-      <label className="block text-sm text-gray-600 dark:text-gray-400">
-        {t('clientSecretLabel')}
-        {data?.hasSecret && (
-          <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">({t('secretKept')})</span>
-        )}
-        <input
-          className={`${inputCls} mt-1`}
-          type="password"
-          value={cfg.clientSecret ?? ''}
-          onChange={(e) => set({ clientSecret: e.target.value })}
-        />
-      </label>
-      <label className="block text-sm text-gray-600 dark:text-gray-400">
-        {t('redirectUrlLabel')}
-        <input
-          className={`${inputCls} mt-1`}
-          value={cfg.redirectUrl}
-          onChange={(e) => set({ redirectUrl: e.target.value })}
-        />
-      </label>
-      <label className="block text-sm text-gray-600 dark:text-gray-400">
-        {t('defaultRoleLabel')}
-        <select
-          className={`${inputCls} mt-1`}
-          value={cfg.defaultRole || 'viewer'}
-          onChange={(e) => set({ defaultRole: e.target.value })}
-        >
-          <option value="viewer">viewer</option>
-          <option value="editor">editor</option>
-          <option value="admin">admin</option>
-        </select>
-      </label>
-      <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-        <input
-          type="checkbox"
-          checked={cfg.autoProvision}
-          onChange={(e) => set({ autoProvision: e.target.checked })}
-          className="accent-violet-600"
-        />
-        {t('autoProvisionLabel')}
-      </label>
-
-      {save.error && <p className="text-sm text-red-600 dark:text-red-400">{(save.error as Error).message}</p>}
-      <button
-        onClick={() => save.mutate()}
-        disabled={save.isPending || form === null}
-        className={primaryBtnCls}
-      >
-        {t('ssoSaveBtn')}
-      </button>
-    </section>
   )
 }
 

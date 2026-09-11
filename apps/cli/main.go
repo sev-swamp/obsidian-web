@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
+	"gopkg.in/yaml.v3"
 
 	"github.com/obsidianweb/obsidianweb/packages/core"
 	"github.com/obsidianweb/obsidianweb/packages/filesystem"
@@ -37,6 +38,8 @@ Commands:
 Standalone (no -vault needed):
   hash-password   read a password from stdin, print its bcrypt hash
                   (for auth.users[].passwordHash in config.yaml)
+  migrate-sso -users <path>   print the sso-oidc plugin env for the
+                  built-in SSO config stored in users.yaml
 `)
 	os.Exit(2)
 }
@@ -48,6 +51,10 @@ func main() {
 
 	if flag.NArg() >= 1 && flag.Arg(0) == "hash-password" {
 		runHashPassword()
+		return
+	}
+	if flag.NArg() >= 1 && flag.Arg(0) == "migrate-sso" {
+		runMigrateSSO(flag.Args()[1:])
 		return
 	}
 	if *vaultPath == "" || flag.NArg() < 1 {
@@ -156,6 +163,73 @@ func runHashPassword() {
 		os.Exit(1)
 	}
 	fmt.Println(string(hash))
+}
+
+// runMigrateSSO reads the legacy built-in SSO block from users.yaml and
+// prints the equivalent environment for the sso-oidc plugin. It parses
+// only the sso block, so it keeps working after acl.SSOConfig is gone,
+// and it never modifies the file — the old block is inert and can be
+// deleted by hand.
+func runMigrateSSO(args []string) {
+	fs := flag.NewFlagSet("migrate-sso", flag.ExitOnError)
+	usersPath := fs.String("users", "", "path to users.yaml")
+	_ = fs.Parse(args)
+	if *usersPath == "" {
+		fmt.Fprintln(os.Stderr, "error: -users <path> is required")
+		os.Exit(2)
+	}
+	raw, err := os.ReadFile(*usersPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+	var data struct {
+		SSO *struct {
+			Enabled       bool   `yaml:"enabled"`
+			Name          string `yaml:"name"`
+			Issuer        string `yaml:"issuer"`
+			ClientID      string `yaml:"clientId"`
+			ClientSecret  string `yaml:"clientSecret"`
+			DefaultRole   string `yaml:"defaultRole"`
+			AutoProvision bool   `yaml:"autoProvision"`
+		} `yaml:"sso"`
+	}
+	if err := yaml.Unmarshal(raw, &data); err != nil {
+		fmt.Fprintln(os.Stderr, "error: parse", *usersPath+":", err)
+		os.Exit(1)
+	}
+	if data.SSO == nil || data.SSO.Issuer == "" {
+		fmt.Fprintln(os.Stderr, "no built-in SSO configuration found in", *usersPath)
+		os.Exit(1)
+	}
+	sso := data.SSO
+	role := sso.DefaultRole
+	if role == "" {
+		role = "viewer"
+	}
+	name := sso.Name
+	if name == "" {
+		name = "Sign in with SSO"
+	}
+
+	fmt.Printf(`# sso-oidc plugin environment migrated from %s
+# 1. Create a service token in Settings -> SSO with permissions
+#    users:provision and session:code (add login-providers:write to use
+#    REGISTER_PROVIDER below), then set SERVICE_TOKEN to svc_<id>_<secret>.
+# 2. Set PLATFORM_URL / PLATFORM_PUBLIC_URL / PLUGIN_PUBLIC_URL for your
+#    deployment. 3. Delete the now-inert sso: block from users.yaml.
+OIDC_ISSUER=%s
+OIDC_CLIENT_ID=%s
+OIDC_CLIENT_SECRET=%s
+DEFAULT_ROLE=%s
+REGISTER_PROVIDER=true
+PROVIDER_ID=oidc
+PROVIDER_NAME=%q
+`, *usersPath, sso.Issuer, sso.ClientID, sso.ClientSecret, role, name)
+	if !sso.AutoProvision {
+		fmt.Fprintln(os.Stderr, "\nnote: the built-in SSO had autoProvision=false; the plugin always "+
+			"provisions accounts. Give the service token a low roleCeiling to keep it constrained.")
+	}
 }
 
 func runExport(notes *core.NoteService, outDir string) {

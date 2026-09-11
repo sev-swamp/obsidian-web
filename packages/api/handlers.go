@@ -580,19 +580,14 @@ func (s *Server) handleTrashPurgeAll(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "purged"})
 }
 
-// Settings API exposes only the runtime-editable subset (note rules)
-// plus read-only facts the UI needs (history availability, so deletion
-// warns when nothing lands in the trash).
+// Settings API exposes only the runtime-editable note rules. Optional
+// capabilities such as Git history are advertised by GET /api/plugins.
 func (s *Server) handleGetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"notes": s.Notes.Rules(),
 		"vault": gin.H{
 			"templatesDir":   s.Config.Vault.TemplatesDir,
 			"attachmentsDir": s.Config.Vault.AttachmentsDir,
-		},
-		"history": gin.H{
-			"enabled": s.Notes.History() != nil,
-			"mode":    s.Config.History.Mode,
 		},
 	})
 }

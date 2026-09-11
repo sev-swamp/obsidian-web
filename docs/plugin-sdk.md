@@ -14,6 +14,21 @@ type Plugin interface {
 }
 ```
 
+Backend plugins that own a runtime capability may additionally implement
+`Toggleable`:
+
+```go
+type Toggleable interface {
+    Enable() error
+    Disable() error
+}
+```
+
+`Init` always registers static routes. `Enable` runs only while the plugin is
+enabled in Settings → Plugins; `Disable` must stop timers, subscriptions and
+other background work before it returns. The built-in `git-history` plugin is
+the reference implementation.
+
 Through `Host` a plugin can:
 
 | Capability          | How                                                     |

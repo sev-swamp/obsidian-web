@@ -1,0 +1,44 @@
+# Example: Obsidian Web + the reference OIDC SSO plugin on one host.
+# The plugin talks to the platform over the internal network; only its
+# /start route needs to be browser-reachable.
+services:
+  obsidianweb:
+    build: ../..
+    ports:
+      - "8787:8787"
+    volumes:
+      - ../../examples/vault:/vault
+      - ../../config:/config:ro
+      - ../../data:/data
+    environment:
+      - OBSIDIANWEB_VAULT=/vault
+      # - OBSIDIANWEB_JWT_SECRET=change-me
+    networks: [internal, web]
+    restart: unless-stopped
+
+  sso-oidc:
+    build: .
+    environment:
+      # Server-to-server (internal network):
+      PLATFORM_URL: http://obsidianweb:8787
+      SERVICE_TOKEN: svc_sso-keycloak_REPLACE_ME   # Settings → SSO → Service tokens
+      # Browser-facing URLs:
+      PLATFORM_PUBLIC_URL: https://notes.example.com
+      PLUGIN_PUBLIC_URL: https://sso.example.com
+      # OIDC provider:
+      OIDC_ISSUER: https://keycloak.example.com/realms/main
+      OIDC_CLIENT_ID: obsidianweb
+      OIDC_CLIENT_SECRET: REPLACE_ME
+      DEFAULT_ROLE: viewer
+      # Optional: self-register the login button (token needs
+      # login-providers:write) instead of adding it in the admin UI.
+      REGISTER_PROVIDER: "true"
+      PROVIDER_ID: keycloak
+      PROVIDER_NAME: "Sign in with Keycloak"
+    networks: [internal, web]   # /start must be reachable from the browser
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: true
+  web: {}

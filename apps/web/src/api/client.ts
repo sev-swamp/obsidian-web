@@ -7,7 +7,6 @@ import type {
   PluginStatus,
   RoleRecord,
   ServiceTokenRecord,
-  SsoConfig,
   CreateNoteRequest,
   DeletedFile,
   Note,
@@ -173,13 +172,6 @@ export const api = {
     request<{ status: string }>(`/api/admin/roles/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }),
-  adminGetSSO: () => request<{ sso: SsoConfig; hasSecret: boolean }>('/api/admin/sso'),
-  adminPutSSO: (sso: SsoConfig) =>
-    request<{ sso: SsoConfig }>('/api/admin/sso', {
-      method: 'PUT',
-      body: JSON.stringify({ sso }),
-    }),
-  ssoStatus: () => request<{ enabled: boolean; name: string }>('/api/auth/sso/status'),
   // External login providers (SSO plugins) + one-time login codes
   authProviders: () => request<{ providers: LoginProvider[] }>('/api/auth/providers'),
   exchangeLoginCode: (code: string) =>
@@ -217,10 +209,6 @@ export const api = {
     request<PluginStatus[]>(`/api/admin/plugins/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(patch),
-    }),
-  me: (token: string) =>
-    request<{ username: string; role: string; permissions: Permission[] }>('/api/auth/me', {
-      headers: { Authorization: `Bearer ${token}` },
     }),
   adminCheck: (user: string, path: string) =>
     request<{ access: string; role: string }>(
