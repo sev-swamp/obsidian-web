@@ -68,3 +68,15 @@ func TestLoadMissingAndEmptyFiles(t *testing.T) {
 		t.Errorf("empty file must keep defaults: cfg=%+v err=%v", cfg, err)
 	}
 }
+
+func TestSyncDataPath(t *testing.T) {
+	path := writeConfig(t, "sync:\n  enabled: true\n  dataFile: data/sync.db\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(path), "data", "sync.db")
+	if got := cfg.SyncDataPath(); got != want {
+		t.Fatalf("SyncDataPath = %q, want %q", got, want)
+	}
+}

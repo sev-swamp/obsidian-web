@@ -79,6 +79,7 @@ export interface PropertyInfo {
 }
 
 export interface Settings {
+	 sync?: { enabled: boolean }
   notes: NoteRules
   vault: { templatesDir: string; attachmentsDir: string }
 }
@@ -183,5 +184,7 @@ export interface VaultEvent {
     | 'tree.changed'
     | 'index.updated'
     | 'plugin.changed'
+    | 'sync.cursor'
   path?: string
+  cursor?: number
 }

@@ -13,14 +13,16 @@ const (
 	EventTreeChanged   = "tree.changed"
 	EventIndexUpdated  = "index.updated"
 	EventPluginChanged = "plugin.changed"
+	EventSyncCursor    = "sync.cursor"
 )
 
 // Event is a domain event. Path is vault-relative; Actor is the
 // username that caused the change ("external" for direct fs edits).
 type Event struct {
-	Type  string `json:"type"`
-	Path  string `json:"path,omitempty"`
-	Actor string `json:"actor,omitempty"`
+	Type   string `json:"type"`
+	Path   string `json:"path,omitempty"`
+	Actor  string `json:"actor,omitempty"`
+	Cursor int64  `json:"cursor,omitempty"`
 }
 
 // Handler receives published events. Handlers must be fast; long work

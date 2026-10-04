@@ -25,6 +25,7 @@ import (
 	"github.com/obsidianweb/obsidianweb/packages/plugins"
 	"github.com/obsidianweb/obsidianweb/packages/search"
 	"github.com/obsidianweb/obsidianweb/packages/settings"
+	syncjournal "github.com/obsidianweb/obsidianweb/packages/sync"
 	"github.com/obsidianweb/obsidianweb/packages/templates"
 	"github.com/obsidianweb/obsidianweb/packages/websocket"
 )
@@ -96,6 +97,17 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatal(err)
 	}
 	notes.AttachHistory(hist, time.Minute)
+	journal, err := syncjournal.Open(filepath.Join(t.TempDir(), "sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = journal.Close() })
+	watcher, err := filesystem.NewWatcher(vault, log, notes.HandleFSEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = watcher.Close() })
+	notes.SetSync(journal, filesystem.NewControlledWriter(vault, watcher))
 
 	usersFile := filepath.Join(t.TempDir(), "users.yaml")
 	if err := os.WriteFile(usersFile, []byte(usersYAML), 0o600); err != nil {
@@ -121,7 +133,8 @@ func newTestEnv(t *testing.T) *testEnv {
 	srv := &Server{
 		Notes:   notes,
 		Vault:   vault,
-		Config:  settings.Default(),
+		Config:  &settings.Config{Sync: settings.SyncConfig{Enabled: true}},
+		Sync:    journal,
 		Auth:    authSvc,
 		ACL:     store,
 		Hub:     websocket.NewHub(bus, nil, log),
@@ -130,6 +143,81 @@ func newTestEnv(t *testing.T) *testEnv {
 		Log:     log,
 	}
 	return &testEnv{router: srv.Router(), auth: authSvc, store: store, srv: srv}
+}
+
+func TestSyncPushPullAndACL(t *testing.T) {
+	env := newTestEnv(t)
+	alice := env.token(t, "alice", auth.RoleEditor)
+
+	// Hidden paths remain indistinguishable from missing paths.
+	if w := env.do(http.MethodPost, "/api/sync/push", alice, `{"deviceId":"phone","operations":[{"opId":"hidden","kind":"upsert","path":"Private/bob/secret.md","content":"x"}]}`); w.Code != http.StatusNotFound {
+		t.Fatalf("hidden push = %d: %s", w.Code, w.Body.String())
+	}
+	if w := env.do(http.MethodPost, "/api/sync/push", alice, `{"deviceId":"phone","operations":[{"opId":"readonly","kind":"upsert","path":"Docs/guide.md","content":"x"}]}`); w.Code != http.StatusForbidden {
+		t.Fatalf("read-only push = %d: %s", w.Code, w.Body.String())
+	}
+	body := `{"deviceId":"phone","operations":[{"opId":"one","kind":"upsert","path":"Welcome.md","content":"synced"}]}`
+	if w := env.do(http.MethodPost, "/api/sync/push", alice, body); w.Code != http.StatusOK {
+		t.Fatalf("push = %d: %s", w.Code, w.Body.String())
+	}
+	// A new note is authorised by its parent folder, like POST /api/note;
+	// there is deliberately no existing file to read at this exact path.
+	newPrivate := `{"deviceId":"phone","operations":[{"opId":"new-private","kind":"upsert","path":"Private/alice/offline.md","content":"queued offline"}]}`
+	if w := env.do(http.MethodPost, "/api/sync/push", alice, newPrivate); w.Code != http.StatusOK {
+		t.Fatalf("new note in writable folder = %d: %s", w.Code, w.Body.String())
+	}
+	// Retrying the same op id does not add a second journal entry.
+	if w := env.do(http.MethodPost, "/api/sync/push", alice, body); w.Code != http.StatusOK {
+		t.Fatalf("duplicate push = %d: %s", w.Code, w.Body.String())
+	}
+	w := env.do(http.MethodGet, "/api/sync/pull?cursor=0", alice, "")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"opId":"one"`) {
+		t.Fatalf("pull = %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncAdministration(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.token(t, "ada", auth.RoleAdmin)
+	if w := env.do(http.MethodGet, "/api/admin/sync/health", admin, ""); w.Code != http.StatusOK {
+		t.Fatalf("health = %d: %s", w.Code, w.Body.String())
+	}
+	if w := env.do(http.MethodPost, "/api/admin/sync/backup", admin, ""); w.Code != http.StatusOK || w.Body.Len() == 0 {
+		t.Fatalf("backup = %d, bytes=%d: %s", w.Code, w.Body.Len(), w.Body.String())
+	}
+}
+
+func TestSyncPushConflictDoesNotApplyEarlierOperation(t *testing.T) {
+	env := newTestEnv(t)
+	alice := env.token(t, "alice", auth.RoleEditor)
+	body := `{"deviceId":"phone","operations":[{"opId":"first","kind":"upsert","path":"Welcome.md","content":"must not persist"},{"opId":"second","kind":"upsert","path":"Welcome.md","content":"conflict","baseHash":"stale"}]}`
+	if w := env.do(http.MethodPost, "/api/sync/push", alice, body); w.Code != http.StatusConflict {
+		t.Fatalf("push = %d: %s", w.Code, w.Body.String())
+	}
+	if got := env.do(http.MethodGet, "/api/note/Welcome", alice, "").Body.String(); strings.Contains(got, "must not persist") {
+		t.Fatalf("first operation was applied despite batch conflict: %s", got)
+	}
+	if w := env.do(http.MethodGet, "/api/sync/pull?cursor=0", alice, ""); strings.Contains(w.Body.String(), `"opId":"first"`) {
+		t.Fatalf("first operation was journalled despite batch conflict: %s", w.Body.String())
+	}
+}
+
+func TestExternalFilesystemChangeIsJournalledOnce(t *testing.T) {
+	env := newTestEnv(t)
+	alice := env.token(t, "alice", auth.RoleEditor)
+	if err := env.srv.Vault.Write("External.md", []byte("from Obsidian")); err != nil {
+		t.Fatal(err)
+	}
+	// Some platforms emit both create and write for a single save.
+	env.srv.Notes.HandleFSEvent("create", "External.md")
+	env.srv.Notes.HandleFSEvent("write", "External.md")
+	w := env.do(http.MethodGet, "/api/sync/pull?cursor=0", alice, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("pull = %d: %s", w.Code, w.Body.String())
+	}
+	if got := strings.Count(w.Body.String(), `"path":"External.md"`); got != 1 {
+		t.Fatalf("external change was journalled %d times: %s", got, w.Body.String())
+	}
 }
 
 // token issues a session for a store-managed user.

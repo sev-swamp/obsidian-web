@@ -16,7 +16,7 @@ const btnCls =
 const primaryBtnCls =
   'rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50'
 
-type Tab = 'general' | 'users' | 'roles' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso'
+type Tab = 'general' | 'users' | 'roles' | 'groups' | 'access' | 'tokens' | 'plugins' | 'sso' | 'sync'
 
 // "General" holds personal preferences and is visible to everyone;
 // the remaining tabs drive admin APIs and need settings:write.
@@ -29,6 +29,7 @@ const adminTabs: { id: Tab; label: TKey }[] = [
   { id: 'tokens', label: 'tabTokens' },
   { id: 'plugins', label: 'tabPlugins' },
   { id: 'sso', label: 'tabSSO' },
+  { id: 'sync', label: 'tabSync' },
 ]
 
 export function SettingsPage() {
@@ -73,9 +74,22 @@ export function SettingsPage() {
             <ServiceTokensSection />
           </>
         )}
+        {tab === 'sync' && <SyncSection />}
       </div>
     </div>
   )
+}
+
+function SyncSection() {
+  const t = useT()
+  const { data, error, isLoading } = useQuery({ queryKey: ['admin-sync-health'], queryFn: api.adminSyncHealth, retry: false })
+  const backup = useMutation({
+    mutationFn: api.adminSyncBackup,
+    onSuccess: (blob) => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'sync-backup.db'; a.click(); URL.revokeObjectURL(url) },
+  })
+  const compact = useMutation({ mutationFn: api.adminSyncCompact })
+  if (error) return <section className="max-w-xl"><h2 className="text-lg font-semibold">{t('syncHealthTitle')}</h2><p className="mt-2 text-sm text-gray-500">{t('syncDisabled')}</p></section>
+  return <section className="max-w-xl"><h2 className="text-lg font-semibold">{t('syncHealthTitle')}</h2><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('syncHealthHint')}</p>{isLoading ? <p className="mt-4 text-sm">{t('loading')}</p> : data && <dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><dt>{t('syncDbSize')}</dt><dd>{Math.ceil(data.dataBytes / 1024)} KiB</dd><dt>{t('syncSnapshotCursor')}</dt><dd>{data.snapshotCursor}</dd><dt>{t('syncPendingOutbox')}</dt><dd>{data.outbox}</dd><dt>{t('syncFailedIntents')}</dt><dd>{data.failedIntents}</dd></dl>}<div className="mt-5 flex gap-2"><button onClick={() => backup.mutate()} disabled={backup.isPending} className={primaryBtnCls}>{t('syncDownloadBackup')}</button><button onClick={() => compact.mutate()} disabled={compact.isPending} className={btnCls}>{t('syncCompact')}</button></div>{(backup.error || compact.error) && <p className="mt-2 text-sm text-red-600">{((backup.error || compact.error) as Error).message}</p>}</section>
 }
 
 function GeneralSection() {

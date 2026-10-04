@@ -1,6 +1,8 @@
 package filesystem
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"path/filepath"
@@ -12,6 +14,12 @@ import (
 )
 
 const writeDebounce = 250 * time.Millisecond
+const suppressionWindow = 2 * time.Second
+
+type suppression struct {
+	expected FileState
+	expires  time.Time
+}
 
 // Watcher observes the vault directory recursively via fsnotify and
 // reports debounced, vault-relative events.
@@ -21,9 +29,10 @@ type Watcher struct {
 	onEvent func(op, path string)
 	log     *slog.Logger
 
-	mu     sync.Mutex
-	timers map[string]*time.Timer
-	done   chan struct{}
+	mu         sync.Mutex
+	timers     map[string]*time.Timer
+	suppressed map[string]suppression
+	done       chan struct{}
 }
 
 // NewWatcher creates a watcher; onEvent receives ("create"|"write"|"remove"|"rename", relPath).
@@ -36,13 +45,28 @@ func NewWatcher(vault *Vault, log *slog.Logger, onEvent func(op, path string)) (
 		log = slog.Default()
 	}
 	return &Watcher{
-		vault:   vault,
-		fsw:     fsw,
-		onEvent: onEvent,
-		log:     log,
-		timers:  map[string]*time.Timer{},
-		done:    make(chan struct{}),
+		vault:      vault,
+		fsw:        fsw,
+		onEvent:    onEvent,
+		log:        log,
+		timers:     map[string]*time.Timer{},
+		suppressed: map[string]suppression{},
+		done:       make(chan struct{}),
 	}, nil
+}
+
+// Suppress registers a state-verified, short-lived marker for a controlled
+// write. Only a watcher event whose on-disk state matches exactly is ignored.
+// The cancellation function is used when the corresponding write failed.
+func (w *Watcher) Suppress(rel string, expected FileState) func() {
+	w.mu.Lock()
+	w.suppressed[rel] = suppression{expected: expected, expires: time.Now().Add(suppressionWindow)}
+	w.mu.Unlock()
+	return func() {
+		w.mu.Lock()
+		delete(w.suppressed, rel)
+		w.mu.Unlock()
+	}
 }
 
 // Start registers all vault directories and begins the event loop.
@@ -136,9 +160,44 @@ func (w *Watcher) debounced(rel string) {
 }
 
 func (w *Watcher) emit(op, rel string) {
+	if w.matchesSuppression(rel) {
+		return
+	}
 	if w.onEvent != nil {
 		w.onEvent(op, rel)
 	}
+}
+
+func (w *Watcher) matchesSuppression(rel string) bool {
+	w.mu.Lock()
+	entry, ok := w.suppressed[rel]
+	if !ok {
+		w.mu.Unlock()
+		return false
+	}
+	if time.Now().After(entry.expires) {
+		delete(w.suppressed, rel)
+		w.mu.Unlock()
+		return false
+	}
+	w.mu.Unlock()
+
+	actual := FileState{}
+	if data, err := w.vault.Read(rel); err == nil {
+		sum := sha256.Sum256(data)
+		actual = FileState{Exists: true, Hash: fmt.Sprintf("%x", sum)}
+	}
+	if actual == entry.expected {
+		return true
+	}
+
+	// A differently shaped event at the same path is evidence that another
+	// writer won the race. It must be surfaced as external, not hidden until
+	// the timeout expires.
+	w.mu.Lock()
+	delete(w.suppressed, rel)
+	w.mu.Unlock()
+	return false
 }
 
 func hiddenPath(rel string) bool {

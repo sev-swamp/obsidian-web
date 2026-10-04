@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/obsidianweb/obsidianweb/packages/plugins/builtin"
 	"github.com/obsidianweb/obsidianweb/packages/search"
 	"github.com/obsidianweb/obsidianweb/packages/settings"
+	syncstore "github.com/obsidianweb/obsidianweb/packages/sync"
 	"github.com/obsidianweb/obsidianweb/packages/templates"
 	"github.com/obsidianweb/obsidianweb/packages/websocket"
 )
@@ -60,7 +63,33 @@ func run(configPath, vaultOverride string) error {
 	if err != nil {
 		return err
 	}
+	// The sync journal must never live in the user vault (or its .git
+	// directory), otherwise it would become an attachment/history artefact.
+	var syncJournal *syncstore.Store
+	if cfg.Sync.Enabled {
+		dataFile := cfg.SyncDataPath()
+		if pathWithin(vault.Root(), dataFile) {
+			return fmt.Errorf("sync.dataFile must be outside vault.path: %s", dataFile)
+		}
+		journal, err := syncstore.Open(dataFile)
+		if err != nil {
+			return fmt.Errorf("sync journal: %w", err)
+		}
+		defer journal.Close()
+		if err := journal.EnsureInitialSnapshot(context.Background(), vault); err != nil {
+			return fmt.Errorf("sync initial snapshot: %w", err)
+		}
+		if err := syncstore.Recover(context.Background(), journal, vault); err != nil {
+			return fmt.Errorf("sync recovery: %w", err)
+		}
+		syncJournal = journal
+	}
 	bus := core.NewEventBus()
+	if syncJournal != nil {
+		publisherCtx, publisherCancel := context.WithCancel(context.Background())
+		defer publisherCancel()
+		go syncstore.NewPublisher(syncJournal, bus, log).Run(publisherCtx)
+	}
 	linkIndex := links.NewIndex()
 	searchIndex := search.NewIndex()
 	renderer := markdown.NewRenderer(linkIndex)
@@ -133,6 +162,9 @@ func run(configPath, vaultOverride string) error {
 		return err
 	}
 	defer watcher.Close()
+	if syncJournal != nil {
+		notes.SetSync(syncJournal, filesystem.NewControlledWriter(vault, watcher))
+	}
 
 	server := &api.Server{
 		Notes:    notes,
@@ -144,6 +176,7 @@ func run(configPath, vaultOverride string) error {
 		Plugins:  pluginManager,
 		Obsidian: obsidian.New(vault.Root()),
 		Bus:      bus,
+		Sync:     syncJournal,
 		WebFS:    frontendFS(cfg, log),
 		Log:      log,
 	}
@@ -172,6 +205,19 @@ func run(configPath, vaultOverride string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(ctx)
+}
+
+func pathWithin(root, target string) bool {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	target, err = filepath.Abs(target)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, target)
+	return err == nil && (rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."))
 }
 
 // buildUsers assembles all accounts from the config (admin + auth.users)

@@ -11,6 +11,7 @@ import { UserMenu } from './UserMenu'
 import { useAuthStore } from '../store/auth'
 import { useSearchStore } from '../store/search'
 import { useThemeStore } from '../store/theme'
+import { useSyncStore } from '../store/sync'
 import { useT } from '../i18n'
 import { MenuIcon, SearchIcon, SunIcon, MoonIcon } from './icons'
 
@@ -23,6 +24,12 @@ export function Layout() {
   const { theme, toggle } = useThemeStore()
   const canEdit = useAuthStore((s) => s.can)('notes:edit')
   const t = useT()
+  const syncEnabled = useSyncStore((s) => s.enabled)
+  const syncStatus = useSyncStore((s) => s.status)
+  const syncLabel = {
+    idle: 'syncSynced', local: 'syncLocal', syncing: 'syncSyncing', synced: 'syncSynced',
+    offline: 'syncOffline', conflict: 'syncConflict', error: 'syncError',
+  } as const
 
   const { data: pluginList } = useQuery({ queryKey: ['plugins'], queryFn: api.plugins })
   const recentEnabled =
@@ -54,6 +61,11 @@ export function Layout() {
           Obsidian Web
         </Link>
         <div className="flex-1" />
+        {syncEnabled && (
+          <span className="hidden text-xs text-gray-500 sm:inline dark:text-gray-400" title={t(syncLabel[syncStatus])}>
+            {t(syncLabel[syncStatus])}
+          </span>
+        )}
         <button
           onClick={() => openSearch()}
           className="hidden items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-500 hover:border-gray-400 sm:flex dark:border-gray-700 dark:text-gray-400"

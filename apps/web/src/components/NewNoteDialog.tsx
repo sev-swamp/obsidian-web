@@ -4,6 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { TreeNode } from '../api/types'
 import { useT } from '../i18n'
+import { syncEngine } from '../sync/runtime'
+
+function offlineNotePath(title: string, folder: string): string {
+  const name = title.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/^\.+$/, 'note')
+  const cleanFolder = folder.trim().replace(/^\/+|\/+$/g, '')
+  return `${cleanFolder ? `${cleanFolder}/` : ''}${name}.md`
+}
 
 function collectFolders(node: TreeNode | undefined, acc: string[] = []): string[] {
   if (!node) return acc
@@ -59,7 +66,18 @@ export function NewNoteDialog({
   }, [open, initialFolder])
 
   const create = useMutation({
-    mutationFn: () => api.createNote({ title, folder, template: template || undefined }),
+    mutationFn: async () => {
+      const engine = syncEngine()
+      // Templates are server-side rendering. A selected template therefore
+      // waits for the network instead of silently creating different content.
+      if (!engine || navigator.onLine || template) return api.createNote({ title, folder, template: template || undefined })
+      const targetFolder = folder || localStorage.getItem('obsidianweb-default-folder') || ''
+      const path = offlineNotePath(title, targetFolder)
+      // A non-empty impossible hash means "create only": if another device
+      // already owns this path the server returns the ordinary 409 conflict.
+      await engine.save(path, '', '__new_note_must_not_exist__')
+      return { path }
+    },
     onSuccess: (note) => {
       void queryClient.invalidateQueries({ queryKey: ['tree'] })
       setTitle('')

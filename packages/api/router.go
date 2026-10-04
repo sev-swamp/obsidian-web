@@ -31,6 +31,7 @@ type Server struct {
 	Plugins  *plugins.Manager
 	Obsidian *obsidian.Compat
 	Bus      core.EventBus
+	Sync     core.SyncAdministration
 	// WebFS is the embedded (or on-disk) frontend; nil means API-only.
 	WebFS fs.FS
 	Log   *slog.Logger
@@ -140,6 +141,11 @@ func (s *Server) Router() *gin.Engine {
 		edit.POST("/trash/restore", s.handleTrashRestore)
 	}
 
+	syncRead := r.Group("/api/sync", s.requirePermission(auth.PermNotesRead))
+	syncRead.GET("/pull", s.handleSyncPull)
+	syncEdit := r.Group("/api/sync", s.requirePermission(auth.PermNotesEdit))
+	syncEdit.POST("/push", s.handleSyncPush)
+
 	r.DELETE("/api/note/*path", s.requirePermission(auth.PermNotesDelete), s.handleDeleteNote)
 	r.POST("/api/upload", s.requirePermission(auth.PermUpload), s.handleUpload)
 	r.PUT("/api/settings", s.requirePermission(auth.PermSettings), s.handlePutSettings)
@@ -167,6 +173,9 @@ func (s *Server) Router() *gin.Engine {
 		admin.PUT("/login-providers", s.handleAdminPutLoginProviders)
 		admin.PUT("/plugins/:id", s.handleAdminSetPlugin)
 		admin.GET("/check", s.handleAdminCheck)
+		admin.GET("/sync/health", s.handleSyncHealth)
+		admin.POST("/sync/backup", s.handleSyncBackup)
+		admin.POST("/sync/compact", s.handleSyncCompact)
 		admin.POST("/reload", s.handleAdminReload)
 	}
 

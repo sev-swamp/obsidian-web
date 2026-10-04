@@ -1,12 +1,17 @@
 package core
 
 import (
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -56,11 +61,265 @@ type NoteService struct {
 	extMu     sync.Mutex
 	extTimers map[string]*time.Timer
 
+	syncMu      sync.RWMutex
+	syncJournal SyncJournal
+	syncWriter  SyncWriter
+	// externalSyncStates coalesces duplicate fsnotify notifications for the
+	// same materialized state. Controlled sync writes are suppressed by the
+	// filesystem adapter before they reach this map.
+	externalSyncStates map[string]string
+
 	// metas caches per-note metadata so listings don't walk the file
 	// system on every request. Populated by ReindexAll and kept fresh by
 	// the same code paths that maintain the search index.
 	metaMu sync.RWMutex
 	metas  map[string]NoteMeta
+}
+
+// SetSync attaches the durable journal and controlled writer after adapters
+// have been constructed in the composition root.
+func (s *NoteService) SetSync(journal SyncJournal, writer SyncWriter) {
+	s.syncMu.Lock()
+	s.syncJournal, s.syncWriter = journal, writer
+	s.syncMu.Unlock()
+}
+
+// ApplySync serializes an idempotent sync mutation with ordinary note saves.
+// A journal acknowledgement is returned only after the controlled vault write
+// and the journal/outbox transaction have both succeeded.
+func (s *NoteService) ApplySync(ctx context.Context, actor string, op SyncOperation) (SyncChange, bool, error) {
+	s.syncMu.RLock()
+	journal, writer := s.syncJournal, s.syncWriter
+	s.syncMu.RUnlock()
+	if journal == nil || writer == nil {
+		return SyncChange{}, false, errors.New("sync is disabled")
+	}
+	if op.OpID == "" || op.DeviceID == "" {
+		return SyncChange{}, false, errors.New("sync opId and deviceId are required")
+	}
+	if op.Kind != SyncUpsert && op.Kind != SyncDelete {
+		return SyncChange{}, false, fmt.Errorf("unsupported sync operation %q", op.Kind)
+	}
+	p := NormalizeNotePath(op.Path)
+	if p == "" {
+		return SyncChange{}, false, errors.New("sync path is required")
+	}
+	op.Path, op.Actor = p, actor
+	if existing, ok, err := journal.Operation(ctx, op.OpID); err != nil || ok {
+		return existing, ok, err
+	}
+	lock := s.pathLock(p)
+	lock.Lock()
+	defer lock.Unlock()
+	if existing, ok, err := journal.Operation(ctx, op.OpID); err != nil || ok {
+		return existing, ok, err
+	}
+	before, err := s.syncFileState(p)
+	if err != nil {
+		return SyncChange{}, false, err
+	}
+	if op.BaseHash != "" && before.Exists && before.Hash != op.BaseHash {
+		data, _ := s.fs.Read(p)
+		return SyncChange{}, false, &ConflictError{CurrentHash: before.Hash, CurrentContent: string(data)}
+	}
+	after := syncStateFor(op)
+	beforeJSON, _ := json.Marshal(before)
+	afterJSON, _ := json.Marshal(after)
+	if err := journal.CreateIntent(ctx, SyncIntent{SyncOperation: op, BeforeState: beforeJSON, AfterState: afterJSON}); err != nil {
+		return SyncChange{}, false, err
+	}
+	if op.Kind == SyncUpsert {
+		err = writer.Write(p, []byte(op.Content))
+	} else {
+		err = writer.Delete(p)
+	}
+	if err != nil {
+		return SyncChange{}, false, err
+	}
+	change, duplicate, err := journal.CommitOperation(ctx, op)
+	if err != nil {
+		return SyncChange{}, false, err
+	}
+	if op.Kind == SyncUpsert {
+		s.indexNote(p, []byte(op.Content))
+		if before.Exists {
+			s.bus.Publish(Event{Type: EventFileChanged, Path: p, Actor: actor})
+		} else {
+			s.bus.Publish(Event{Type: EventFileCreated, Path: p, Actor: actor})
+			s.bus.Publish(Event{Type: EventTreeChanged, Actor: actor})
+		}
+	} else {
+		s.links.Remove(p)
+		s.search.Remove(p)
+		s.removeMeta(p)
+		s.bus.Publish(Event{Type: EventFileDeleted, Path: p, Actor: actor})
+		s.bus.Publish(Event{Type: EventTreeChanged, Actor: actor})
+	}
+	return change, duplicate, nil
+}
+
+// PullSync reads the ordered sync journal. Filtering for a caller's ACL is a
+// transport concern: the caller must still retain the returned cursor even
+// when every change on that page is hidden.
+func (s *NoteService) PullSync(ctx context.Context, after int64, limit int) ([]SyncChange, int64, bool, error) {
+	s.syncMu.RLock()
+	journal := s.syncJournal
+	s.syncMu.RUnlock()
+	if journal == nil {
+		return nil, after, false, errors.New("sync is disabled")
+	}
+	return journal.Pull(ctx, after, limit)
+}
+
+func (s *NoteService) SyncBootstrap(ctx context.Context, cursor int64, force bool) (SyncSnapshot, bool, error) {
+	s.syncMu.RLock()
+	journal := s.syncJournal
+	s.syncMu.RUnlock()
+	if journal == nil {
+		return SyncSnapshot{}, false, errors.New("sync is disabled")
+	}
+	return journal.Bootstrap(ctx, cursor, force)
+}
+
+// ApplySyncBatch validates a complete push under every affected path lock,
+// writes durable intents/files, then commits all journal and outbox rows in one
+// SQLite transaction. A validation failure therefore acknowledges no operation.
+func (s *NoteService) ApplySyncBatch(ctx context.Context, actor string, operations []SyncOperation) ([]SyncChange, []bool, error) {
+	s.syncMu.RLock()
+	journal, writer := s.syncJournal, s.syncWriter
+	s.syncMu.RUnlock()
+	if journal == nil || writer == nil {
+		return nil, nil, errors.New("sync is disabled")
+	}
+	if len(operations) == 0 {
+		return nil, nil, errors.New("sync operations are required")
+	}
+	paths := make([]string, 0, len(operations))
+	seenIDs := map[string]bool{}
+	for i := range operations {
+		op := &operations[i]
+		if op.OpID == "" || op.DeviceID == "" || seenIDs[op.OpID] {
+			return nil, nil, &SyncBatchError{Operation: *op, Err: errors.New("opId/deviceId is invalid or duplicated")}
+		}
+		seenIDs[op.OpID] = true
+		if op.Kind != SyncUpsert && op.Kind != SyncDelete {
+			return nil, nil, &SyncBatchError{Operation: *op, Err: fmt.Errorf("unsupported sync operation %q", op.Kind)}
+		}
+		op.Path, op.Actor = NormalizeNotePath(op.Path), actor
+		if op.Path == "" {
+			return nil, nil, &SyncBatchError{Operation: *op, Err: errors.New("sync path is required")}
+		}
+		paths = append(paths, op.Path)
+	}
+	slices.Sort(paths)
+	paths = slices.Compact(paths)
+	locks := make([]*sync.Mutex, len(paths))
+	for i, p := range paths {
+		locks[i] = s.pathLock(p)
+		locks[i].Lock()
+	}
+	defer func() {
+		for i := len(locks) - 1; i >= 0; i-- {
+			locks[i].Unlock()
+		}
+	}()
+	changes := make([]SyncChange, len(operations))
+	duplicates := make([]bool, len(operations))
+	states := map[string]syncFileState{}
+	before := make([]syncFileState, len(operations))
+	for i, op := range operations {
+		if existing, ok, err := journal.Operation(ctx, op.OpID); err != nil {
+			return nil, nil, err
+		} else if ok {
+			changes[i], duplicates[i] = existing, true
+			continue
+		}
+		state, ok := states[op.Path]
+		if !ok {
+			var err error
+			state, err = s.syncFileState(op.Path)
+			if err != nil {
+				return nil, nil, err
+			}
+			states[op.Path] = state
+		}
+		if op.BaseHash != "" && state.Exists && state.Hash != op.BaseHash {
+			data, _ := s.fs.Read(op.Path)
+			return nil, nil, &SyncBatchError{Operation: op, Err: &ConflictError{CurrentHash: state.Hash, CurrentContent: string(data)}}
+		}
+		before[i] = state
+		states[op.Path] = syncStateFor(op)
+	}
+	for i, op := range operations {
+		if duplicates[i] {
+			continue
+		}
+		beforeJSON, _ := json.Marshal(before[i])
+		afterJSON, _ := json.Marshal(syncStateFor(op))
+		if err := journal.CreateIntent(ctx, SyncIntent{SyncOperation: op, BeforeState: beforeJSON, AfterState: afterJSON}); err != nil {
+			return nil, nil, &SyncBatchError{Operation: op, Err: err}
+		}
+		var err error
+		if op.Kind == SyncUpsert {
+			err = writer.Write(op.Path, []byte(op.Content))
+		} else {
+			err = writer.Delete(op.Path)
+		}
+		if err != nil {
+			return nil, nil, &SyncBatchError{Operation: op, Err: err}
+		}
+	}
+	committed, committedDuplicates, err := journal.CommitOperations(ctx, operations)
+	if err != nil {
+		return nil, nil, err
+	}
+	for i := range operations {
+		changes[i] = committed[i]
+		duplicates[i] = committedDuplicates[i]
+	}
+	for i, op := range operations {
+		if duplicates[i] {
+			continue
+		}
+		if op.Kind == SyncUpsert {
+			s.indexNote(op.Path, []byte(op.Content))
+			if before[i].Exists {
+				s.bus.Publish(Event{Type: EventFileChanged, Path: op.Path, Actor: actor})
+			} else {
+				s.bus.Publish(Event{Type: EventFileCreated, Path: op.Path, Actor: actor})
+				s.bus.Publish(Event{Type: EventTreeChanged, Actor: actor})
+			}
+		} else {
+			s.links.Remove(op.Path)
+			s.search.Remove(op.Path)
+			s.removeMeta(op.Path)
+			s.bus.Publish(Event{Type: EventFileDeleted, Path: op.Path, Actor: actor})
+			s.bus.Publish(Event{Type: EventTreeChanged, Actor: actor})
+		}
+	}
+	return changes, duplicates, nil
+}
+
+type syncFileState struct {
+	Exists bool   `json:"exists"`
+	Hash   string `json:"hash,omitempty"`
+}
+
+func (s *NoteService) syncFileState(p string) (syncFileState, error) {
+	data, err := s.fs.Read(p)
+	if errors.Is(err, ErrNotFound) {
+		return syncFileState{}, nil
+	}
+	if err != nil {
+		return syncFileState{}, err
+	}
+	return syncFileState{Exists: true, Hash: HashContent(data)}, nil
+}
+func syncStateFor(op SyncOperation) syncFileState {
+	if op.Kind == SyncDelete {
+		return syncFileState{}
+	}
+	return syncFileState{Exists: true, Hash: HashContent([]byte(op.Content))}
 }
 
 // NewNoteService wires the core service from its dependencies.
@@ -71,9 +330,10 @@ func NewNoteService(fs VaultFS, renderer Renderer, links LinkIndex, search Searc
 	return &NoteService{
 		fs: fs, renderer: renderer, links: links, search: search,
 		templates: templates, bus: bus, rules: rules, log: log,
-		locks:     map[string]*sync.Mutex{},
-		extTimers: map[string]*time.Timer{},
-		metas:     map[string]NoteMeta{},
+		locks:              map[string]*sync.Mutex{},
+		extTimers:          map[string]*time.Timer{},
+		externalSyncStates: map[string]string{},
+		metas:              map[string]NoteMeta{},
 	}
 }
 
@@ -632,9 +892,11 @@ func (s *NoteService) ReindexAll() error {
 func (s *NoteService) HandleFSEvent(op, p string) {
 	switch op {
 	case "create", "write":
+		var markdown []byte
 		if IsMarkdown(p) {
 			data, err := s.fs.Read(p)
 			if err == nil {
+				markdown = data
 				s.indexNote(p, data)
 			}
 		} else {
@@ -647,6 +909,9 @@ func (s *NoteService) HandleFSEvent(op, p string) {
 		} else {
 			s.bus.Publish(Event{Type: EventFileChanged, Path: p, Actor: ActorExternal})
 		}
+		if IsMarkdown(p) && markdown != nil {
+			s.recordExternalSync(p, SyncUpsert, string(markdown))
+		}
 	case "remove", "rename":
 		s.links.Remove(p)
 		s.search.Remove(p)
@@ -654,8 +919,52 @@ func (s *NoteService) HandleFSEvent(op, p string) {
 		s.record(ActorExternal, p, "delete")
 		s.bus.Publish(Event{Type: EventFileDeleted, Path: p, Actor: ActorExternal})
 		s.bus.Publish(Event{Type: EventTreeChanged, Actor: ActorExternal})
+		if IsMarkdown(p) {
+			s.recordExternalSync(p, SyncDelete, "")
+		}
 	}
 	s.bus.Publish(Event{Type: EventIndexUpdated})
+}
+
+// recordExternalSync turns a direct filesystem change into the same ordered
+// journal stream used by API-originated changes. fsnotify commonly reports a
+// create followed by write for one save, hence the last-state guard.
+func (s *NoteService) recordExternalSync(p string, kind SyncOperationKind, content string) {
+	s.syncMu.RLock()
+	journal := s.syncJournal
+	s.syncMu.RUnlock()
+	if journal == nil {
+		return
+	}
+	state := string(kind)
+	if kind == SyncUpsert {
+		state += ":" + HashContent([]byte(content))
+	}
+	lock := s.pathLock(p)
+	lock.Lock()
+	defer lock.Unlock()
+	s.syncMu.RLock()
+	if s.externalSyncStates[p] == state {
+		s.syncMu.RUnlock()
+		return
+	}
+	s.syncMu.RUnlock()
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		s.log.Warn("sync external operation id", "path", p, "error", err)
+		return
+	}
+	_, _, err := journal.CommitOperation(context.Background(), SyncOperation{
+		OpID: hex.EncodeToString(id[:]), Actor: ActorExternal, DeviceID: "filesystem",
+		Path: p, Kind: kind, Content: content, CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		s.log.Warn("journal external filesystem change", "path", p, "error", err)
+		return
+	}
+	s.syncMu.Lock()
+	s.externalSyncStates[p] = state
+	s.syncMu.Unlock()
 }
 
 func (s *NoteService) indexNote(p string, data []byte) {

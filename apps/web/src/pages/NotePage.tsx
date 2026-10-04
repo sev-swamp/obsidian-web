@@ -15,8 +15,10 @@ import { usePrefsStore } from '../store/prefs'
 import { useThemeStore } from '../store/theme'
 import { usePresenceStore } from '../store/presence'
 import { useWsStore } from '../store/ws'
+import { useSyncStore } from '../store/sync'
 import { useT } from '../i18n'
 import { sendPresence } from '../ws'
+import { cacheSyncNote, cachedSyncNote, syncEngine } from '../sync/runtime'
 import { PlusIcon, PencilIcon, EyeIcon, AlertTriangleIcon } from '../components/icons'
 
 export function NotePage() {
@@ -37,6 +39,7 @@ export function NotePage() {
   const lineNumbers = usePrefsStore((s) => s.lineNumbers)
   const openInEdit = usePrefsStore((s) => s.openInEdit)
   const t = useT()
+  const syncConflict = useSyncStore((s) => s.conflict)
 
   const {
     data: note,
@@ -44,9 +47,21 @@ export function NotePage() {
     error,
   } = useQuery({
     queryKey: ['note', notePath.endsWith('.md') ? notePath : notePath + '.md'],
-    queryFn: () => api.note(notePath),
+    queryFn: async () => {
+      try {
+        const loaded = await api.note(notePath)
+        void cacheSyncNote({ path: loaded.path, content: loaded.content, contentHash: loaded.contentHash, updatedAt: Date.now() })
+        return loaded
+      } catch (error) {
+        const local = await cachedSyncNote(notePath.endsWith('.md') ? notePath : `${notePath}.md`)
+        if (!local) throw error
+        return { path: local.path, title: local.path.split('/').pop()?.replace(/\.md$/i, '') ?? local.path, content: local.content, contentHash: local.contentHash ?? '', size: local.content.length, modTime: new Date(local.updatedAt).toISOString(), access: 'write' as const }
+      }
+    },
     enabled: notePath.length > 0,
   })
+  const activeConflict = conflict ?? (syncConflict?.path === (note?.path ?? notePath) ? syncConflict : null)
+  const activeSyncConflict = syncConflict?.path === (note?.path ?? notePath) ? syncConflict : null
 
   // Candidate notes for the editor's [[wiki-link]] autocomplete.
   const { data: allNotes } = useQuery({
@@ -120,8 +135,11 @@ export function NotePage() {
     presence?.viewers.filter((u) => u !== username && !otherEditors.includes(u)) ?? []
 
   const save = useMutation({
-    mutationFn: (vars: { content: string; baseHash: string }) =>
-      api.saveNote(notePath, vars.content, vars.baseHash),
+    mutationFn: async (vars: { content: string; baseHash: string }) => {
+      const engine = syncEngine()
+      if (engine) return engine.save(notePath, vars.content, vars.baseHash)
+      return api.saveNote(notePath, vars.content, vars.baseHash)
+    },
     onSuccess: () => {
       setEditing(false)
       setConflict(null)
@@ -137,7 +155,11 @@ export function NotePage() {
   })
 
   const remove = useMutation({
-    mutationFn: () => api.deleteNote(notePath),
+    mutationFn: () => {
+      const engine = syncEngine()
+      if (engine) return engine.remove(notePath, note?.contentHash).then(() => ({ status: 'queued' }))
+      return api.deleteNote(notePath)
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['tree'] })
       navigate('/')
@@ -160,10 +182,16 @@ export function NotePage() {
   })()
 
   const createMissing = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const clean = notePath.replace(/\.md$/i, '')
       const slash = clean.lastIndexOf('/')
       const title = slash >= 0 ? clean.slice(slash + 1) : clean
+      const engine = syncEngine()
+      if (engine && !navigator.onLine) {
+        const path = `${targetFolder ? `${targetFolder}/` : ''}${title}.md`
+        await engine.save(path, '', '__new_note_must_not_exist__')
+        return { path }
+      }
       return api.createNote({ title, folder: targetFolder })
     },
     onSuccess: (note) => {
@@ -360,7 +388,7 @@ export function NotePage() {
         </footer>
       )}
 
-      {conflict && (
+      {activeConflict && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
             <h2 className="mb-2 flex items-center gap-2 text-lg font-semibold text-amber-600 dark:text-amber-400">
@@ -368,28 +396,41 @@ export function NotePage() {
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               {t('conflictBody')}
-              {conflict.changedBy && (
+              {conflict?.changedBy && (
                 <>
                   {' '}
                   {t('changedBy')}: <strong>{conflict.changedBy}</strong>
-                  {conflict.changedAt &&
-                    ` (${new Date(conflict.changedAt).toLocaleString()})`}
+                  {conflict.changedAt && ` (${new Date(conflict.changedAt).toLocaleString()})`}
                 </>
               )}
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <button
-                onClick={() =>
-                  save.mutate({ content: draft, baseHash: conflict.currentHash })
-                }
+                onClick={() => void (async () => {
+                  if (activeSyncConflict) await syncEngine()?.resolveConflict(activeSyncConflict.opId)
+                  save.mutate({ content: draft, baseHash: activeConflict.currentHash })
+                })()}
                 className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
               >
                 {t('overwriteMine')}
               </button>
               <button
+                onClick={() => void (async () => {
+                  if (activeSyncConflict) await syncEngine()?.resolveConflict(activeSyncConflict.opId)
+                  const extension = note.path.match(/(\.[^.]+)$/)?.[1] ?? '.md'
+                  const stem = note.path.slice(0, -extension.length)
+                  await syncEngine()?.save(`${stem} conflict ${new Date().toISOString().replace(/[:.]/g, '-')}${extension}`, draft)
+                  setConflict(null)
+                })()}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+              >
+                {t('saveCopy')}
+              </button>
+              <button
                 onClick={() => {
-                  setDraft(conflict.currentContent)
-                  setBaseHash(conflict.currentHash)
+                  if (activeSyncConflict) void syncEngine()?.resolveConflict(activeSyncConflict.opId)
+                  setDraft(activeConflict.currentContent)
+                  setBaseHash(activeConflict.currentHash)
                   setConflict(null)
                 }}
                 className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"

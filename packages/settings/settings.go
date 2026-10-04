@@ -16,11 +16,12 @@ import (
 
 // Config is the top-level application configuration.
 type Config struct {
-	Server ServerConfig   `yaml:"server"`
-	Vault  VaultConfig    `yaml:"vault"`
-	Notes  core.NoteRules `yaml:"notes"`
+	Server  ServerConfig   `yaml:"server"`
+	Vault   VaultConfig    `yaml:"vault"`
+	Notes   core.NoteRules `yaml:"notes"`
 	Auth    AuthConfig     `yaml:"auth"`
 	History HistoryConfig  `yaml:"history"`
+	Sync    SyncConfig     `yaml:"sync"`
 	Web     WebConfig      `yaml:"web"`
 	Log     LogConfig      `yaml:"log"`
 
@@ -75,6 +76,13 @@ type HistoryConfig struct {
 	ExternalDebounceSec int `yaml:"externalDebounceSec"`
 }
 
+// SyncConfig configures the durable offline-first journal. It remains opt-in
+// until migrations, recovery and the HTTP protocol are complete.
+type SyncConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	DataFile string `yaml:"dataFile"`
+}
+
 type WebConfig struct {
 	// StaticDir overrides the embedded frontend (useful in development).
 	StaticDir string `yaml:"staticDir"`
@@ -109,8 +117,22 @@ func Default() *Config {
 			Mode:                "managed",
 			ExternalDebounceSec: 45,
 		},
-		Log: LogConfig{Level: "info"},
+		Sync: SyncConfig{DataFile: "sync.db"},
+		Log:  LogConfig{Level: "info"},
 	}
+}
+
+// SyncDataPath resolves the journal location relative to config.yaml. The
+// composition root validates that the resulting path is outside the vault.
+func (c *Config) SyncDataPath() string {
+	if filepath.IsAbs(c.Sync.DataFile) {
+		return c.Sync.DataFile
+	}
+	base := filepath.Dir(c.path)
+	if c.path == "" {
+		base = "."
+	}
+	return filepath.Join(base, c.Sync.DataFile)
 }
 
 // Load reads the config file (if present) over the defaults. Environment

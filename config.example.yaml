@@ -45,6 +45,12 @@ history:
   # revision per file per interval, seconds.
   externalDebounceSec: 45
 
+# Offline-first sync is opt-in. Keep this database outside vault.path;
+# in Docker use /data/sync.db.
+sync:
+  enabled: false
+  dataFile: "sync.db"
+
 auth:
   # Disabled by default: ideal for a private, local instance.
   enabled: false

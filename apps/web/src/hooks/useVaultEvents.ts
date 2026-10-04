@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/auth'
 import { usePresenceStore } from '../store/presence'
 import { useWsStore } from '../store/ws'
 import { setSocket } from '../ws'
+import { wakeSync } from '../sync/runtime'
 
 interface PresenceEvent {
   type: 'presence.changed'
@@ -69,6 +70,9 @@ export function useVaultEvents() {
             break
           case 'plugin.changed':
             void queryClient.invalidateQueries({ queryKey: ['plugins'] })
+            break
+          case 'sync.cursor':
+            wakeSync()
             break
         }
       }

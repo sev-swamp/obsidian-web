@@ -1,6 +1,6 @@
 # План 8. Offline-first синхронизация заметок
 
-Статус: проект; перед реализацией требуется решение ADR-006 из этапа 0.
+Статус: готов.
 Приоритет: высокий для мобильного клиента; не блокирует текущий План 7
 «Автосохранение».
 Зависимости: План 1 (готов: actor, optimistic locking, история), План 2
@@ -171,13 +171,13 @@ UUID из базы, не browser fingerprint.
 
 | Этап | Результат | Статус |
 | --- | --- | --- |
-| 0 | исследование + ADR-006 + config/migration design | не начат |
-| 1 | sync store, миграции, core port/use cases, unit-тесты | не начат |
-| 2 | handlers/routes/client DTO для push/pull, ACL, idempotency, recovery | не начат |
-| 3 | outbox publisher + WebSocket cursor signal + reconnect integration tests | не начат |
-| 4 | IndexedDB repository и sync engine без изменения редактора | не начат |
-| 5 | интеграция с редактором, offline status, conflict UX, i18n en/ru | не начат |
-| 6 | документация, нагрузочные/crash tests, observability и rollout | не начат |
+| 0 | исследование + ADR-006 + config/migration design | готов |
+| 1 | sync store, миграции, core port/use cases, unit-тесты | готов |
+| 2 | handlers/routes/client DTO для push/pull, ACL, idempotency, recovery | готов |
+| 3 | outbox publisher + WebSocket cursor signal + reconnect integration tests | готов |
+| 4 | IndexedDB repository и sync engine без изменения редактора | готов |
+| 5 | интеграция с редактором, offline status, conflict UX, i18n en/ru | готов |
+| 6 | snapshot/bootstrap и compaction, админские Sync Health/backup, документация, нагрузочные/crash tests, observability и rollout | готов |
 
 Этапы 1–3 должны предоставить полностью тестируемый API без браузера. Этап 4
 сначала включается за feature flag `sync.enabled`; включать по умолчанию лишь
@@ -207,8 +207,11 @@ UUID из базы, не browser fingerprint.
   взять серверное / сохранить копией»; не применять last-write-wins к тексту.
 - **Дубликаты и reconnect:** unique `op_id`, pull по cursor, WebSocket только
   wake-up signal; протестировать доставку любого события 0, 1 или N раз.
-- **Рост журнала:** snapshot/compaction не делать до появления метрик; сначала
-  retention и бэкап SQLite. Перед выпуском установить лимит и alert.
+- **Рост журнала:** перед очисткой создать и проверить snapshot на конкретном
+  cursor; клиенты с более старым cursor получают bootstrap из snapshot, затем
+  `pull`. Перед выпуском добавить админский Sync Health, лимит/предупреждение
+  и скачивание согласованного SQLite backup; никогда не удалять подтверждённые
+  операции без snapshot, который их заменяет.
 - **Переименование и удаление:** tombstone с UUID заметки; не использовать
   путь как постоянный ID в следующей итерации. В MVP запретить rename при
   pending outbox либо выразить его отдельной операцией и покрыть тестом.
@@ -236,6 +239,9 @@ UUID из базы, не browser fingerprint.
    добавлены unit-, integration- и browser-тесты offline/reconnect/conflict.
 9. Все новые UI-строки есть в `en` и `ru`; docs/api.md документирует ошибки,
    лимиты и курсорную семантику.
+10. Администратор видит состояние и размер sync-хранилища, может скачать
+    согласованный backup без доступа к серверу; compaction не лишает старый
+    клиент возможности догнаться через snapshot/bootstrap.
 
 ## 10. Prompt для исполнителя
 

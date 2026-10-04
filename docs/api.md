@@ -95,6 +95,29 @@ Admin management (permission `settings:write`):
 | GET    | `/api/attachment/{path}` | `notes:read`   | Raw file (images, PDF, audio, video; supports Range) |
 | POST   | `/api/upload`            | `files:upload` | multipart `file` (+ optional `folder`) → `{path}` |
 
+## Offline sync
+
+Sync is enabled with `sync.enabled: true`; its SQLite database must be outside
+the vault. `push` accepts at most 100 operations / 1 MiB. A client stores an
+operation durably before sending it and may resend the same `opId` safely.
+
+| Method | Path | Permission | Description |
+| --- | --- | --- | --- |
+| POST | `/api/sync/push` | `notes:edit` | `{deviceId, operations}` → `{acknowledged, cursor}`. A batch is validated before writes and journalled atomically. |
+| GET | `/api/sync/pull?cursor=&limit=` | `notes:read` | Ordered changes with `{nextCursor, hasMore}`; hidden ACL paths are omitted while cursor still advances. |
+
+An outdated cursor receives `{snapshot: {baseCursor, notes, checksum}}`; the
+client applies it first and pulls subsequent operations. `409` contains the
+conflicting `opId`, path, current hash and content. WebSocket `/ws` emits a
+path-filtered `sync.cursor` wake-up; clients must still pull.
+
+Administrators can query `/api/admin/sync/health`, download a consistent
+SQLite copy with `POST /api/admin/sync/backup`, and run a safe journal
+compaction with `POST /api/admin/sync/compact`. Compaction first commits a
+verified snapshot and only then removes journal rows covered by it; old
+clients receive that snapshot on their next `pull`. The temporary backup is
+removed from the server after the response.
+
 ## Git history plugin & trash
 
 These endpoints are available only while the built-in `git-history` plugin is
@@ -142,6 +165,7 @@ The server pushes JSON events; the UI updates without page reloads.
 | `file.deleted`  | File removed (also fired on rename)        |
 | `tree.changed`  | Directory structure changed                |
 | `index.updated` | Link/search indexes refreshed              |
+| `sync.cursor` | A visible sync cursor advanced; call `pull` |
 
 Errors are returned as `{"error": "message"}` with an appropriate HTTP
 status (400, 401, 403, 404, 500).

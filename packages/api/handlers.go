@@ -584,6 +584,7 @@ func (s *Server) handleTrashPurgeAll(c *gin.Context) {
 // capabilities such as Git history are advertised by GET /api/plugins.
 func (s *Server) handleGetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
+		"sync": gin.H{"enabled": s.Config.Sync.Enabled},
 		"notes": s.Notes.Rules(),
 		"vault": gin.H{
 			"templatesDir":   s.Config.Vault.TemplatesDir,

@@ -3,10 +3,12 @@
 package filesystem
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -40,6 +42,30 @@ func NewVault(root string) (*Vault, error) {
 
 // Root returns the absolute vault root.
 func (v *Vault) Root() string { return v.root }
+
+// CanonicalPath normalizes a vault-relative file path into its stable slash
+// representation. It rejects the vault root and paths that escape it. Sync
+// uses this value as its durable path identity; callers that need directories
+// should continue to use AbsPath.
+func (v *Vault) CanonicalPath(rel string) (string, error) {
+	// API paths always use slash form. Treat a backslash as a separator even on
+	// Unix, where filepath.ToSlash intentionally leaves it untouched.
+	rel = strings.TrimSpace(strings.ReplaceAll(filepath.ToSlash(rel), `\`, "/"))
+	for _, part := range strings.Split(rel, "/") {
+		if part == ".." {
+			return "", ErrOutsideVault
+		}
+	}
+	p := path.Clean("/" + rel)
+	p = strings.TrimPrefix(p, "/")
+	if p == "" || p == "." {
+		return "", fmt.Errorf("vault-relative file path is required")
+	}
+	if _, err := v.AbsPath(p); err != nil {
+		return "", err
+	}
+	return p, nil
+}
 
 // AbsPath resolves and validates a vault-relative path.
 func (v *Vault) AbsPath(rel string) (string, error) {
@@ -92,6 +118,50 @@ func (v *Vault) Write(path string, data []byte) error {
 	return os.WriteFile(abs, data, 0o644)
 }
 
+// WriteAtomic writes data durably through a same-directory temporary file.
+// It is intended for operations that need crash recovery outside the file
+// system (notably sync intents). Existing Vault.Write keeps its historical
+// semantics for normal note saves.
+func (v *Vault) WriteAtomic(p string, data []byte) error {
+	p, err := v.CanonicalPath(p)
+	if err != nil {
+		return err
+	}
+	abs, err := v.AbsPath(p)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(abs)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".obsidianweb-sync-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, abs); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
 func (v *Vault) Mkdir(path string) error {
 	abs, err := v.AbsPath(path)
 	if err != nil {
@@ -109,6 +179,44 @@ func (v *Vault) Delete(path string) error {
 		return notFound(path, err)
 	}
 	return nil
+}
+
+// DeleteAtomic removes a file and synchronizes the containing directory so a
+// caller can safely finalise an external durable transaction afterwards.
+func (v *Vault) DeleteAtomic(p string) error {
+	p, err := v.CanonicalPath(p)
+	if err != nil {
+		return err
+	}
+	abs, err := v.AbsPath(p)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(abs); err != nil {
+		return notFound(p, err)
+	}
+	return syncDir(filepath.Dir(abs))
+}
+
+func syncDir(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
+}
+
+// FileState is the observed durable state used to match a controlled write
+// against its watcher notifications.
+type FileState struct {
+	Exists bool   `json:"exists"`
+	Hash   string `json:"hash,omitempty"`
+}
+
+func fileState(data []byte) FileState {
+	sum := sha256.Sum256(data)
+	return FileState{Exists: true, Hash: fmt.Sprintf("%x", sum)}
 }
 
 func (v *Vault) Exists(path string) bool {

@@ -62,6 +62,15 @@ function encodePath(path: string): string {
 }
 
 export const api = {
+
+  syncPush: (deviceId: string, operations: Array<{ opId: string; kind: 'upsert' | 'delete'; path: string; content?: string; baseHash?: string }>) =>
+    request<{ acknowledged: string[]; cursor: number }>('/api/sync/push', {
+      method: 'POST', body: JSON.stringify({ deviceId, operations }),
+    }),
+  syncPull: (cursor: number, limit = 100, bootstrap = false) =>
+    request<{ changes: Array<{ accountSeq: number; opId: string; deviceId: string; path: string; kind: 'upsert' | 'delete'; content?: string; baseHash?: string }>; nextCursor: number; hasMore: boolean; snapshot?: { baseCursor: number; notes: Record<string, string>; checksum: string } }>(
+      `/api/sync/pull?cursor=${cursor}&limit=${limit}${bootstrap ? '&bootstrap=1' : ''}`,
+    ),
   tree: () => request<TreeNode>('/api/tree'),
   note: (path: string) => request<Note>(`/api/note/${encodePath(path)}`),
   saveNote: (path: string, content: string, baseHash?: string) =>
@@ -214,6 +223,14 @@ export const api = {
     request<{ access: string; role: string }>(
       `/api/admin/check?user=${encodeURIComponent(user)}&path=${encodeURIComponent(path)}`,
     ),
+  adminSyncHealth: () => request<{ dataBytes: number; snapshotCursor: number; operations: number; outbox: number; failedIntents: number }>('/api/admin/sync/health'),
+  adminSyncBackup: async () => {
+    const token = useAuthStore.getState().token
+    const res = await fetch('/api/admin/sync/backup', { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!res.ok) throw new ApiError(res.status, 'backup failed')
+    return res.blob()
+  },
+  adminSyncCompact: () => request<{ changed: boolean; baseCursor: number }>('/api/admin/sync/compact', { method: 'POST' }),
   // Personal API tokens
   tokens: () => request<ApiTokenRecord[]>('/api/tokens'),
   createToken: (body: { name: string; ttlDays?: number; permissions?: string[] }) =>
